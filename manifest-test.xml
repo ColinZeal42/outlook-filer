@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OfficeApp
+  xmlns="http://schemas.microsoft.com/office/appforoffice/1.1"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0"
+  xmlns:mailappor="http://schemas.microsoft.com/office/mailappversionoverrides/1.0"
+  xsi:type="MailApp">
+
+  <Id>55567e54-b8e4-4c4d-9336-1df2581cb22b</Id>
+  <Version>1.0.0.1</Version>
+  <ProviderName>HMF</ProviderName>
+  <DefaultLocale>en-US</DefaultLocale>
+  <DisplayName DefaultValue="HMF Test Handler"/>
+  <Description DefaultValue="Confirms OnMessageSend handler fires."/>
+
+  <IconUrl DefaultValue="https://benevolent-creponne-b3c176.netlify.app/assets/icon-64.png"/>
+  <HighResolutionIconUrl DefaultValue="https://benevolent-creponne-b3c176.netlify.app/assets/icon-128.png"/>
+  <SupportUrl DefaultValue="https://benevolent-creponne-b3c176.netlify.app"/>
+  <AppDomains>
+    <AppDomain>https://benevolent-creponne-b3c176.netlify.app</AppDomain>
+  </AppDomains>
+
+  <Hosts>
+    <Host Name="Mailbox"/>
+  </Hosts>
+
+  <Requirements>
+    <Sets>
+      <Set Name="Mailbox" MinVersion="1.3"/>
+    </Sets>
+  </Requirements>
+
+  <FormSettings>
+    <Form xsi:type="ItemRead">
+      <DesktopSettings>
+        <SourceLocation DefaultValue="https://benevolent-creponne-b3c176.netlify.app/dialog.html"/>
+        <RequestedHeight>250</RequestedHeight>
+      </DesktopSettings>
+    </Form>
+  </FormSettings>
+
+  <Permissions>ReadWriteMailbox</Permissions>
+
+  <Rule xsi:type="RuleCollection" Mode="Or">
+    <Rule xsi:type="ItemIs" ItemType="Message" FormType="Read"/>
+  </Rule>
+
+  <VersionOverrides xmlns="http://schemas.microsoft.com/office/mailappversionoverrides" xsi:type="VersionOverridesV1_0">
+    <VersionOverrides xmlns="http://schemas.microsoft.com/office/mailappversionoverrides/1.1" xsi:type="VersionOverridesV1_1">
+
+      <Requirements>
+        <bt:Sets>
+          <bt:Set Name="Mailbox" MinVersion="1.12"/>
+        </bt:Sets>
+      </Requirements>
+
+      <Hosts>
+        <Host xsi:type="MailHost">
+          <Runtimes>
+            <Runtime resid="Commands.Html" lifetime="short"/>
+          </Runtimes>
+          <DesktopFormFactor>
+            <FunctionFile resid="Commands.Html"/>
+            <ExtensionPoint xsi:type="LaunchEvent">
+              <LaunchEvents>
+                <LaunchEvent Type="OnMessageSend" FunctionName="onMessageSend" SendMode="SoftBlock"/>
+              </LaunchEvents>
+              <SourceLocation resid="Commands.Html"/>
+            </ExtensionPoint>
+          </DesktopFormFactor>
+        </Host>
+      </Hosts>
+
+      <Resources>
+        <bt:Urls>
+          <bt:Url id="Commands.Html" DefaultValue="https://benevolent-creponne-b3c176.netlify.app/commands-test.html"/>
+        </bt:Urls>
+        <bt:ShortStrings>
+          <bt:String id="AddInName" DefaultValue="HMF Test Handler"/>
+        </bt:ShortStrings>
+        <bt:LongStrings>
+          <bt:String id="AddInDescription" DefaultValue="Confirms OnMessageSend handler fires."/>
+        </bt:LongStrings>
+      </Resources>
+
+    </VersionOverrides>
+  </VersionOverrides>
+</OfficeApp>

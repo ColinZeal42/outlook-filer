@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>File Email</title>
+  <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+  <style>
+    body {
+      font-family: "Segoe UI", sans-serif;
+      margin: 0;
+      padding: 24px;
+      background: #fff;
+      color: #1a1a1a;
+    }
+    .prompt { font-size: 14px; margin-bottom: 8px; }
+    .folder { font-size: 16px; font-weight: 600; margin-bottom: 24px; color: #0078d4; }
+    .buttons { display: flex; gap: 12px; }
+    button {
+      padding: 8px 20px;
+      font-size: 14px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    #move   { background: #0078d4; color: #fff; }
+    #move:hover { background: #106ebe; }
+    #skip   { background: #f3f3f3; color: #1a1a1a; }
+    #skip:hover { background: #e0e0e0; }
+  </style>
+</head>
+<body>
+  <div class="prompt">File this email under:</div>
+  <div class="folder" id="folderName">Loading…</div>
+  <div class="buttons">
+    <button id="move">Move</button>
+    <button id="skip">Skip</button>
+  </div>
+  <script src="dialog.js"></script>
+</body>
+</html>

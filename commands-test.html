@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8"/>
+  <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+  <script>
+    Office.onReady(function() {
+      Office.actions.associate("onMessageSend", async function(event) {
+        try {
+          const token = await Office.auth.getAccessToken({ allowSignInPrompt: false, allowConsentPrompt: false, forMSGraphAccess: true });
+          event.completed({ allowEvent: false, errorMessage: "SSO OK. Token length: " + token.length });
+        } catch(e) {
+          event.completed({ allowEvent: false, errorMessage: "SSO failed: " + (e.code || e.message || JSON.stringify(e)) });
+        }
+      });
+    });
+  </script>
+</head>
+<body></body>
+</html>
