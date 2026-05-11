@@ -48,7 +48,7 @@ async function onMessageSend(event) {
     );
 
     if (!match) {
-      return event.completed({ allowEvent: true });
+      return event.completed({ allowEvent: false, errorMessage: `HMF: No match. Checked ${folders.length} folders. Subject: "${subject}"` });
     }
 
     await setPending({ folderId: match.id, folderName: match.displayName });
