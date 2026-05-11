@@ -70,6 +70,134 @@ function checkStatus() {
   }
 }
 
+// --- Core email actions ---
+
+async function moveMessage(token, msgId, destinationId) {
+  const res = await fetch(`${GRAPH_BASE}/me/messages/${msgId}/move`, {
+    method: "POST",
+    headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+    body: JSON.stringify({ destinationId })
+  });
+  if (!res.ok) throw new Error("Move failed: " + res.status);
+}
+
+async function fileEmail(token, msgId, folderId, rowEl) {
+  const fileBtn = rowEl.querySelector(".file-btn");
+  const delBtn = rowEl.querySelector(".delete-btn");
+  const ignBtn = rowEl.querySelector(".ignore-btn");
+  if (fileBtn) fileBtn.disabled = true;
+  if (delBtn) delBtn.disabled = true;
+  if (ignBtn) ignBtn.disabled = true;
+  if (fileBtn) fileBtn.textContent = "Filing...";
+  try {
+    await moveMessage(token, msgId, folderId);
+    if (fileBtn) fileBtn.textContent = "Filed ✓";
+    rowEl.classList.add("done");
+  } catch(e) {
+    if (fileBtn) { fileBtn.textContent = "Error"; fileBtn.disabled = false; }
+    if (delBtn) delBtn.disabled = false;
+    if (ignBtn) ignBtn.disabled = false;
+  }
+}
+
+async function deleteEmail(token, msgId, rowEl) {
+  const delBtn = rowEl.querySelector(".delete-btn");
+  const ignBtn = rowEl.querySelector(".ignore-btn");
+  const fileBtn = rowEl.querySelector(".file-btn");
+  if (delBtn) delBtn.disabled = true;
+  if (ignBtn) ignBtn.disabled = true;
+  if (fileBtn) fileBtn.disabled = true;
+  if (delBtn) delBtn.textContent = "Deleting...";
+  try {
+    await moveMessage(token, msgId, "deleteditems");
+    if (delBtn) delBtn.textContent = "Deleted ✓";
+    rowEl.classList.add("done");
+  } catch(e) {
+    if (delBtn) { delBtn.textContent = "Error"; delBtn.disabled = false; }
+    if (ignBtn) ignBtn.disabled = false;
+    if (fileBtn) fileBtn.disabled = false;
+  }
+}
+
+async function ignoreEmail(token, msgId, rowEl, moveToSent) {
+  const delBtn = rowEl.querySelector(".delete-btn");
+  const ignBtn = rowEl.querySelector(".ignore-btn");
+  const fileBtn = rowEl.querySelector(".file-btn");
+  if (delBtn) delBtn.disabled = true;
+  if (ignBtn) ignBtn.disabled = true;
+  if (fileBtn) fileBtn.disabled = true;
+  if (moveToSent) {
+    if (ignBtn) ignBtn.textContent = "Moving...";
+    try {
+      await moveMessage(token, msgId, "SentItems");
+      if (ignBtn) ignBtn.textContent = "Moved ✓";
+      rowEl.classList.add("done");
+    } catch(e) {
+      if (ignBtn) { ignBtn.textContent = "Error"; ignBtn.disabled = false; }
+      if (delBtn) delBtn.disabled = false;
+      if (fileBtn) fileBtn.disabled = false;
+    }
+  } else {
+    rowEl.classList.add("done");
+  }
+}
+
+// --- Row rendering ---
+
+function formatDate(dateStr) {
+  if (!dateStr) return "";
+  const d = new Date(dateStr);
+  if (isNaN(d)) return "";
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+function renderQueueRow(queueEl, token, msg, match, opts) {
+  opts = opts || {};
+  const subject = msg.subject || "(no subject)";
+  const isInternal = opts.isInternal || false;
+  const senderLabel = opts.senderLabel || "";
+  const dateStr = opts.dateStr || "";
+  const moveOnIgnore = !!opts.moveOnIgnore;
+
+  const row = document.createElement("div");
+  row.className = "queue-row";
+
+  let topHtml = `<div class="queue-top">`;
+  topHtml += `<span class="queue-subject" title="${escapeHtml(subject)}">${escapeHtml(subject.slice(0, 65))}</span>`;
+
+  if (match) {
+    topHtml += `<span class="queue-arrow">→</span>`;
+    topHtml += `<span class="queue-folder" title="${escapeHtml(match.displayName)}">${escapeHtml(match.displayName)}</span>`;
+    topHtml += `<button class="file-btn">File It</button>`;
+  } else if (isInternal) {
+    topHtml += `<span class="queue-badge">(internal)</span>`;
+  } else {
+    topHtml += `<span class="queue-badge">(no match)</span>`;
+  }
+
+  topHtml += `<button class="delete-btn">Delete</button>`;
+  topHtml += `<button class="ignore-btn">Ignore</button>`;
+  topHtml += `</div>`;
+
+  let metaHtml = "";
+  if (senderLabel || dateStr) {
+    const parts = [senderLabel, dateStr].filter(Boolean);
+    metaHtml = `<div class="queue-meta">${escapeHtml(parts.join(" • "))}</div>`;
+  }
+
+  row.innerHTML = topHtml + metaHtml;
+
+  const capturedMsgId = msg.id;
+  if (match) {
+    const capturedFolderId = match.id;
+    row.querySelector(".file-btn").addEventListener("click", () => fileEmail(token, capturedMsgId, capturedFolderId, row));
+  }
+  row.querySelector(".delete-btn").addEventListener("click", () => deleteEmail(token, capturedMsgId, row));
+  row.querySelector(".ignore-btn").addEventListener("click", () => ignoreEmail(token, capturedMsgId, row, moveOnIgnore));
+
+  queueEl.appendChild(row);
+}
+
 // --- Process Unfiled ---
 
 async function ensureSentUnfiledFolder(token) {
@@ -89,77 +217,6 @@ async function ensureSentUnfiledFolder(token) {
   if (!createRes.ok) throw new Error("Could not create Sent-Unfiled folder");
   const created = await createRes.json();
   return created.id;
-}
-
-async function moveMessage(token, msgId, destinationId) {
-  const res = await fetch(`${GRAPH_BASE}/me/messages/${msgId}/move`, {
-    method: "POST",
-    headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
-    body: JSON.stringify({ destinationId })
-  });
-  if (!res.ok) throw new Error("Move failed: " + res.status);
-}
-
-async function fileEmail(token, msgId, folderId, rowEl) {
-  const fileBtn = rowEl.querySelector(".file-btn");
-  const skipBtn = rowEl.querySelector(".skip-btn");
-  fileBtn.disabled = true;
-  skipBtn.disabled = true;
-  fileBtn.textContent = "Filing...";
-  try {
-    await moveMessage(token, msgId, folderId);
-    fileBtn.textContent = "Filed ✓";
-    rowEl.classList.add("done");
-  } catch(e) {
-    fileBtn.textContent = "Error";
-    fileBtn.disabled = false;
-    skipBtn.disabled = false;
-  }
-}
-
-async function skipEmail(token, msgId, rowEl) {
-  const fileBtn = rowEl.querySelector(".file-btn");
-  const skipBtn = rowEl.querySelector(".skip-btn");
-  fileBtn.disabled = true;
-  skipBtn.disabled = true;
-  skipBtn.textContent = "Moving...";
-  try {
-    await moveMessage(token, msgId, "SentItems");
-    skipBtn.textContent = "Moved to Sent";
-    rowEl.classList.add("done");
-  } catch(e) {
-    skipBtn.textContent = "Error";
-    fileBtn.disabled = false;
-    skipBtn.disabled = false;
-  }
-}
-
-function renderQueueRow(queueEl, token, msg, match) {
-  const subject = (msg.subject || "(no subject)").slice(0, 50);
-  const row = document.createElement("div");
-  row.className = "queue-row";
-
-  if (!match) {
-    row.innerHTML =
-      `<span class="queue-subject">${escapeHtml(subject)}</span>` +
-      `<span class="queue-arrow">→</span>` +
-      `<span class="queue-no-match">No match</span>`;
-  } else {
-    row.innerHTML =
-      `<span class="queue-subject" title="${escapeHtml(msg.subject || "")}">${escapeHtml(subject)}</span>` +
-      `<span class="queue-arrow">→</span>` +
-      `<span class="queue-folder" title="${escapeHtml(match.displayName)}">${escapeHtml(match.displayName)}</span>` +
-      `<button class="file-btn">File It</button>` +
-      `<button class="skip-btn">Skip</button>`;
-
-    const capturedMsgId = msg.id;
-    const capturedFolderId = match.id;
-    row.querySelector(".file-btn").addEventListener("click", () => fileEmail(token, capturedMsgId, capturedFolderId, row));
-    row.querySelector(".skip-btn").addEventListener("click", () => skipEmail(token, capturedMsgId, row));
-  }
-
-  queueEl.appendChild(row);
-  return match !== null;
 }
 
 async function processUnfiled() {
@@ -186,7 +243,7 @@ async function processUnfiled() {
 
     const msgsRes = await fetch(
       `${GRAPH_BASE}/me/mailFolders/${sentUnfiledId}/messages` +
-      `?$select=id,subject,toRecipients,sentDateTime&$top=50&$orderby=sentDateTime asc`,
+      `?$select=id,subject,toRecipients,sentDateTime,from&$top=50&$orderby=sentDateTime asc`,
       { headers: { Authorization: "Bearer " + token } }
     );
     if (!msgsRes.ok) throw new Error("Graph " + msgsRes.status);
@@ -198,39 +255,40 @@ async function processUnfiled() {
       return;
     }
 
+    messages.sort((a, b) => (a.subject || "").localeCompare(b.subject || ""));
+
     const folders = parseFolders(foldersJson);
-    let matchCount = 0;
-    const autoMoves = [];
+    let shownCount = 0;
+    const calendarMoves = [];
 
     for (const msg of messages) {
+      if (isCalendarMessage(msg.subject || "")) {
+        calendarMoves.push(moveMessage(token, msg.id, "SentItems").catch(() => {}));
+        continue;
+      }
+
       const emails = (msg.toRecipients || []).map(r => r.emailAddress.address);
       const participantText = (msg.toRecipients || []).map(r =>
         r.emailAddress.name + " " + r.emailAddress.address
       ).join(" ");
 
-      if (isCalendarMessage(msg.subject || "") || !hasExternalRecipient(emails, USER_DOMAIN)) {
-        autoMoves.push(moveMessage(token, msg.id, "SentItems").catch(() => {}));
-        continue;
-      }
+      const isInternal = !hasExternalRecipient(emails, USER_DOMAIN);
+      const match = isInternal ? null : matchFolder({ subject: msg.subject || "", participantText }, folders);
 
-      const match = matchFolder({ subject: msg.subject || "", participantText }, folders);
-      if (!match) {
-        autoMoves.push(moveMessage(token, msg.id, "SentItems").catch(() => {}));
-        continue;
-      }
+      const toNames = (msg.toRecipients || []).map(r => r.emailAddress.name || r.emailAddress.address).join(", ");
+      const senderLabel = toNames ? "To: " + toNames : "";
+      const dateStr = formatDate(msg.sentDateTime);
 
-      renderQueueRow(queueEl, token, msg, match);
-      matchCount++;
+      renderQueueRow(queueEl, token, msg, match, { isInternal, senderLabel, dateStr, moveOnIgnore: true });
+      shownCount++;
     }
 
-    const autoMovedCount = autoMoves.length;
-    await Promise.allSettled(autoMoves);
+    await Promise.allSettled(calendarMoves);
 
-    if (matchCount === 0) {
-      statusEl.textContent = `All ${autoMovedCount} email${autoMovedCount !== 1 ? "s" : ""} moved to Sent Items (no case matches found).`;
+    if (shownCount === 0) {
+      statusEl.textContent = "No emails to process.";
     } else {
-      const autoNote = autoMovedCount > 0 ? `; ${autoMovedCount} moved to Sent automatically` : "";
-      statusEl.textContent = `${matchCount} email${matchCount !== 1 ? "s" : ""} to review${autoNote}:`;
+      statusEl.textContent = `${shownCount} email${shownCount !== 1 ? "s" : ""} to review:`;
     }
   } catch(e) {
     statusEl.textContent = "Error: " + e.message;
@@ -274,17 +332,20 @@ function fileSelected() {
   const folders = parseFolders(foldersJson);
   const match = matchFolder({ subject, participantText }, folders);
 
-  if (!match) {
-    statusEl.textContent = "No matching case folder found for this email.";
-    btn.disabled = false;
-    return;
-  }
+  const toNames = recipients.map(r => r.displayName || r.emailAddress).join(", ");
+  const senderLabel = toNames ? "To: " + toNames : "";
+  const dateStr = item.dateTimeCreated ? formatDate(item.dateTimeCreated.toISOString()) : "";
 
   Office.context.mailbox.convertToRestId(
     item.itemId,
     Office.MailboxEnums.RestVersion.v2_0,
     function(restId) {
-      renderQueueRow(queueEl, token, { id: restId, subject }, match);
+      renderQueueRow(queueEl, token, { id: restId, subject }, match, {
+        isInternal: false,
+        senderLabel,
+        dateStr,
+        moveOnIgnore: true
+      });
       statusEl.textContent = "1 email to review:";
       btn.disabled = false;
     }
@@ -315,7 +376,7 @@ async function fileInbox() {
   try {
     const msgsRes = await fetch(
       `${GRAPH_BASE}/me/mailFolders/Inbox/messages` +
-      `?$select=id,subject,from,toRecipients&$top=50&$orderby=receivedDateTime desc`,
+      `?$select=id,subject,from,toRecipients,receivedDateTime&$top=50&$orderby=receivedDateTime desc`,
       { headers: { Authorization: "Bearer " + token } }
     );
     if (!msgsRes.ok) throw new Error("Graph " + msgsRes.status);
@@ -327,28 +388,32 @@ async function fileInbox() {
       return;
     }
 
+    messages.sort((a, b) => (a.subject || "").localeCompare(b.subject || ""));
+
     const folders = parseFolders(foldersJson);
-    let matchCount = 0;
+    let shownCount = 0;
 
     for (const msg of messages) {
       if (isCalendarMessage(msg.subject || "")) continue;
 
-      // For incoming email, match against sender + subject
-      const fromName = msg.from && msg.from.emailAddress ? msg.from.emailAddress.name || "" : "";
       const fromAddr = msg.from && msg.from.emailAddress ? msg.from.emailAddress.address || "" : "";
+      const fromName = msg.from && msg.from.emailAddress ? msg.from.emailAddress.name || "" : "";
       const participantText = fromName + " " + fromAddr;
 
-      const match = matchFolder({ subject: msg.subject || "", participantText }, folders);
-      if (!match) continue; // Non-matches stay in inbox untouched
+      const isInternal = fromAddr.toLowerCase().endsWith("@" + USER_DOMAIN);
+      const match = isInternal ? null : matchFolder({ subject: msg.subject || "", participantText }, folders);
 
-      renderQueueRow(queueEl, token, msg, match);
-      matchCount++;
+      const senderLabel = fromName ? "From: " + fromName : (fromAddr ? "From: " + fromAddr : "");
+      const dateStr = formatDate(msg.receivedDateTime);
+
+      renderQueueRow(queueEl, token, msg, match, { isInternal, senderLabel, dateStr, moveOnIgnore: false });
+      shownCount++;
     }
 
-    if (matchCount === 0) {
-      statusEl.textContent = "No case folder matches found in Inbox.";
+    if (shownCount === 0) {
+      statusEl.textContent = "No emails in Inbox.";
     } else {
-      statusEl.textContent = `${matchCount} email${matchCount !== 1 ? "s" : ""} to review:`;
+      statusEl.textContent = `${shownCount} email${shownCount !== 1 ? "s" : ""} to review:`;
     }
   } catch(e) {
     statusEl.textContent = "Error: " + e.message;

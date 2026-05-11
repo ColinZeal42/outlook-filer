@@ -4,8 +4,8 @@
   <meta charset="UTF-8"/>
   <title>HMF Email Filer Setup</title>
   <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
-  <script>var SETUP_VERSION = "v21";</script>
-  <script src="setup.js?v=21"></script>
+  <script>var SETUP_VERSION = "v22";</script>
+  <script src="setup.js?v=22"></script>
   <style>
     body { font-family: 'Segoe UI', sans-serif; padding: 20px; color: #1a1a1a; margin: 0; }
     h2 { font-size: 16px; margin: 0 0 14px; }
@@ -19,15 +19,18 @@
     #fileInboxBtn { display: none; margin-top: 6px; margin-left: 6px; background: #c43e1c; }
     #queue-status { font-size: 14px; margin-top: 12px; color: #555; min-height: 20px; }
     #queue { margin-top: 8px; }
-    .queue-row { display: flex; align-items: center; gap: 6px; padding: 7px 0; border-bottom: 1px solid #eee; font-size: 14px; }
+    .queue-row { display: flex; flex-direction: column; gap: 4px; padding: 8px 0; border-bottom: 1px solid #eee; }
     .queue-row.done { opacity: 0.4; }
-    .queue-subject { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .queue-top { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .queue-subject { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; font-size: 14px; }
     .queue-arrow { color: #aaa; flex-shrink: 0; }
-    .queue-folder { color: #0078d4; flex-shrink: 0; max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
-    .queue-no-match { color: #aaa; flex-shrink: 0; font-style: italic; font-size: 13px; }
+    .queue-folder { color: #0078d4; flex-shrink: 0; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+    .queue-badge { font-size: 11px; color: #aaa; font-style: italic; flex-shrink: 0; }
+    .queue-meta { font-size: 12px; color: #888; padding-left: 2px; }
     .file-btn { flex-shrink: 0; padding: 4px 10px; background: #107c10; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 13px; }
-    .skip-btn { flex-shrink: 0; padding: 4px 10px; background: #605e5c; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 13px; }
-    .file-btn:disabled, .skip-btn:disabled { background: #bbb; cursor: default; }
+    .delete-btn { flex-shrink: 0; padding: 4px 10px; background: #a4262c; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 13px; }
+    .ignore-btn { flex-shrink: 0; padding: 4px 10px; background: #605e5c; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 13px; }
+    .file-btn:disabled, .delete-btn:disabled, .ignore-btn:disabled { background: #bbb; cursor: default; }
     #ver { margin-top: 20px; font-size: 11px; color: #bbb; }
   </style>
 </head>
