@@ -7,7 +7,7 @@
   xsi:type="MailApp">
 
   <Id>c41a2c93-abb6-4276-8f11-a47e71353c65</Id>
-  <Version>1.0.0.6</Version>
+  <Version>1.0.0.7</Version>
   <ProviderName>HMF</ProviderName>
   <DefaultLocale>en-US</DefaultLocale>
   <DisplayName DefaultValue="HMF Email Filer"/>
@@ -91,7 +91,7 @@
         <Scopes>
           <Scope>profile</Scope>
           <Scope>openid</Scope>
-          <Scope>https://graph.microsoft.com/Mail.ReadWrite</Scope>
+          <Scope>Mail.ReadWrite</Scope>
         </Scopes>
       </WebApplicationInfo>
     </VersionOverrides>
