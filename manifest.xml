@@ -7,7 +7,7 @@
   xsi:type="MailApp">
 
   <Id>c41a2c93-abb6-4276-8f11-a47e71353c65</Id>
-  <Version>2.0.0.0</Version>
+  <Version>3.0.0.0</Version>
   <ProviderName>HMF</ProviderName>
   <DefaultLocale>en-US</DefaultLocale>
   <DisplayName DefaultValue="HMF Email Filer"/>
@@ -61,39 +61,62 @@
           </Runtimes>
           <DesktopFormFactor>
             <FunctionFile resid="Commands.Html"/>
+
+            <ExtensionPoint xsi:type="MessageReadCommandSurface">
+              <OfficeTab id="TabDefault">
+                <Group id="hmf.Group">
+                  <Label resid="AddInName"/>
+                  <Control xsi:type="Button" id="hmf.SetupButton">
+                    <Label resid="SetupLabel"/>
+                    <Supertip>
+                      <Title resid="SetupLabel"/>
+                      <Description resid="SetupDesc"/>
+                    </Supertip>
+                    <Icon>
+                      <bt:Image size="16" resid="Icon16"/>
+                      <bt:Image size="32" resid="Icon32"/>
+                      <bt:Image size="80" resid="Icon80"/>
+                    </Icon>
+                    <Action xsi:type="ShowTaskpane">
+                      <TaskpaneId>HmfSetup</TaskpaneId>
+                      <SourceLocation resid="Setup.Html"/>
+                    </Action>
+                  </Control>
+                </Group>
+              </OfficeTab>
+            </ExtensionPoint>
+
             <ExtensionPoint xsi:type="LaunchEvent">
               <LaunchEvents>
                 <LaunchEvent Type="OnMessageSend" FunctionName="onMessageSend" SendMode="SoftBlock"/>
               </LaunchEvents>
               <SourceLocation resid="Commands.Html"/>
             </ExtensionPoint>
+
           </DesktopFormFactor>
         </Host>
       </Hosts>
 
       <Resources>
         <bt:Urls>
-          <bt:Url id="Commands.Url" DefaultValue="https://ColinZeal42.github.io/outlook-filer/commands.js"/>
           <bt:Url id="Commands.Html" DefaultValue="https://ColinZeal42.github.io/outlook-filer/commands.html"/>
-          <bt:Url id="Dialog.Url" DefaultValue="https://ColinZeal42.github.io/outlook-filer/dialog.html"/>
+          <bt:Url id="Setup.Html" DefaultValue="https://ColinZeal42.github.io/outlook-filer/setup.html"/>
         </bt:Urls>
+        <bt:Images>
+          <bt:Image id="Icon16" DefaultValue="https://ColinZeal42.github.io/outlook-filer/assets/icon-64.png"/>
+          <bt:Image id="Icon32" DefaultValue="https://ColinZeal42.github.io/outlook-filer/assets/icon-64.png"/>
+          <bt:Image id="Icon80" DefaultValue="https://ColinZeal42.github.io/outlook-filer/assets/icon-128.png"/>
+        </bt:Images>
         <bt:ShortStrings>
           <bt:String id="AddInName" DefaultValue="HMF Email Filer"/>
+          <bt:String id="SetupLabel" DefaultValue="HMF Setup"/>
         </bt:ShortStrings>
         <bt:LongStrings>
           <bt:String id="AddInDescription" DefaultValue="Files sent emails into matching case folders."/>
+          <bt:String id="SetupDesc" DefaultValue="Connect to Microsoft to enable automatic email filing."/>
         </bt:LongStrings>
       </Resources>
 
-      <WebApplicationInfo>
-        <Id>75dc31c8-0515-4c64-849c-3958218e2c5f</Id>
-        <Resource>api://hmflaw.com/75dc31c8-0515-4c64-849c-3958218e2c5f</Resource>
-        <Scopes>
-          <Scope>profile</Scope>
-          <Scope>openid</Scope>
-          <Scope>Mail.ReadWrite</Scope>
-        </Scopes>
-      </WebApplicationInfo>
     </VersionOverrides>
   </VersionOverrides>
 </OfficeApp>

@@ -1,5 +1,7 @@
 "use strict";
 
+const AUTH_CLIENT_ID = "75dc31c8-0515-4c64-849c-3958218e2c5f";
+const AUTH_TOKEN_URL = "https://login.microsoftonline.com/hmflaw.com/oauth2/v2.0/token";
 const USER_DOMAIN = "hmflaw.com";
 const GRAPH_BASE = "https://graph.microsoft.com/v1.0";
 
@@ -18,25 +20,29 @@ async function onMessageSend(event) {
     ]);
 
     if (isCalendarMessage(subject)) {
-      return event.completed({ allowEvent: false, errorMessage: `HMF debug: calendar skip. Subject: "${subject}"` });
+      return event.completed({ allowEvent: true });
     }
 
     const emails = recipients.map(r => r.emailAddress);
     if (!hasExternalRecipient(emails, USER_DOMAIN)) {
-      return event.completed({ allowEvent: false, errorMessage: `HMF debug: all internal. Emails: ${emails.join(", ")}` });
+      return event.completed({ allowEvent: true });
+    }
+
+    const token = await getAccessToken();
+    if (!token) {
+      // Not set up yet — let the email send normally
+      return event.completed({ allowEvent: true });
     }
 
     // Second pass: user clicked "Send Anyway" to confirm filing
     const pending = await getPending();
     if (pending) {
-      const token = await getAccessToken();
       moveAfterSend(token, itemId, pending.folderId);
       await clearPending();
-      return event.completed({ allowEvent: false, errorMessage: `HMF debug: filed to "${pending.folderName}" and sent.` });
+      return event.completed({ allowEvent: true });
     }
 
     // First pass: find matching folder
-    const token = await getAccessToken();
     const folders = await getCaseFolders(token);
     const match = matchFolder(
       {
@@ -48,7 +54,7 @@ async function onMessageSend(event) {
     );
 
     if (!match) {
-      return event.completed({ allowEvent: false, errorMessage: `HMF: No match. Checked ${folders.length} folders. Subject: "${subject}"` });
+      return event.completed({ allowEvent: true });
     }
 
     await setPending({ folderId: match.id, folderName: match.displayName });
@@ -58,16 +64,54 @@ async function onMessageSend(event) {
     });
   } catch (err) {
     console.error("onMessageSend error:", err);
-    event.completed({ allowEvent: false, errorMessage: "HMF Filer: " + (err.message || String(err)) });
+    event.completed({ allowEvent: true });
   }
 }
 
-// --- Pending confirmation (OfficeRuntime.storage) ---
+// --- Auth (OfficeRuntime.storage) ---
+
+async function getAccessToken() {
+  const stored = await OfficeRuntime.storage.getItems(["access_token", "token_expiry", "refresh_token"]);
+  const expiry = parseInt(stored.token_expiry || "0");
+
+  if (stored.access_token && Date.now() < expiry - 300000) {
+    return stored.access_token;
+  }
+
+  if (!stored.refresh_token) {
+    return null;
+  }
+
+  const resp = await fetch(AUTH_TOKEN_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "refresh_token",
+      client_id: AUTH_CLIENT_ID,
+      refresh_token: stored.refresh_token,
+      scope: "https://graph.microsoft.com/Mail.ReadWrite offline_access",
+    }),
+  });
+
+  if (!resp.ok) return null;
+  const data = await resp.json();
+  if (!data.access_token) return null;
+
+  await OfficeRuntime.storage.setItems({
+    access_token: data.access_token,
+    token_expiry: String(Date.now() + data.expires_in * 1000),
+    ...(data.refresh_token ? { refresh_token: data.refresh_token } : {}),
+  });
+
+  return data.access_token;
+}
+
+// --- Pending confirmation ---
 
 async function getPending() {
   const s = await OfficeRuntime.storage.getItems(["pendingFolderId", "pendingFolderName", "pendingTs"]);
   if (!s.pendingFolderId || !s.pendingTs) return null;
-  if (Date.now() - parseInt(s.pendingTs) > 90000) return null; // expire after 90s
+  if (Date.now() - parseInt(s.pendingTs) > 90000) return null;
   return { folderId: s.pendingFolderId, folderName: s.pendingFolderName };
 }
 
@@ -81,16 +125,6 @@ async function setPending(folder) {
 
 async function clearPending() {
   await OfficeRuntime.storage.removeItems(["pendingFolderId", "pendingFolderName", "pendingTs"]);
-}
-
-// --- Auth ---
-
-async function getAccessToken() {
-  return Office.auth.getAccessToken({
-    allowSignInPrompt: false,
-    allowConsentPrompt: false,
-    forMSGraphAccess: true,
-  });
 }
 
 // --- Graph ---
@@ -137,7 +171,6 @@ async function moveMessage(token, internetMessageId, folderId) {
       return;
     }
   }
-  throw new Error("Sent message not found after retries");
 }
 
 function moveAfterSend(token, internetMessageId, folderId) {
