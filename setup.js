@@ -172,8 +172,9 @@ async function showEmailAt(index) {
 
   document.getElementById("email-subject-text").textContent = entry.msg.subject || "(no subject)";
 
-  const metaParts = [entry.opts.senderLabel, entry.opts.dateStr].filter(Boolean);
-  document.getElementById("email-meta").textContent = metaParts.join("  •  ");
+  const line1 = [entry.opts.senderLabel, entry.opts.dateStr].filter(Boolean).join("  •  ");
+  const line2 = entry.opts.ccLabel || "";
+  document.getElementById("email-meta").textContent = [line1, line2].filter(Boolean).join("\n");
 
   const matchEl = document.getElementById("email-match-line");
   if (entry.match) {
@@ -376,12 +377,14 @@ async function processUnfiled() {
       const match = isInternal ? null : matchFolder({ subject: msg.subject || "", participantText }, folders);
 
       const toNames = (msg.toRecipients || []).map(r => r.emailAddress.name || r.emailAddress.address).join(", ");
+      const ccNames = (msg.ccRecipients || []).map(r => r.emailAddress.name || r.emailAddress.address).join(", ");
       entries.push({
         msg,
         match,
         opts: {
           isInternal,
           senderLabel: toNames ? "To: " + toNames : "",
+          ccLabel: ccNames ? "CC: " + ccNames : "",
           dateStr: formatDate(msg.sentDateTime),
           moveOnIgnore: true
         }
@@ -442,6 +445,7 @@ async function fileSelected() {
   const match = matchFolder({ subject, participantText }, folders);
 
   const toNames = (item.to || []).map(r => r.displayName || r.emailAddress).join(", ");
+  const ccNames = (item.cc || []).map(r => r.displayName || r.emailAddress).join(", ");
   const dateStr = item.dateTimeCreated ? formatDate(item.dateTimeCreated.toISOString()) : "";
 
   try {
@@ -458,6 +462,7 @@ async function fileSelected() {
       opts: {
         isInternal: false,
         senderLabel: toNames ? "To: " + toNames : "",
+        ccLabel: ccNames ? "CC: " + ccNames : "",
         dateStr,
         moveOnIgnore: true
       },
@@ -526,12 +531,14 @@ async function fileInbox() {
       const isInternal = fromAddr.toLowerCase().endsWith("@" + USER_DOMAIN) && !hasExternalRecipient(recipientEmails, USER_DOMAIN);
       const match = isInternal ? null : matchFolder({ subject: msg.subject || "", participantText }, folders);
 
+      const ccNames = (msg.ccRecipients || []).map(r => r.emailAddress ? (r.emailAddress.name || r.emailAddress.address || "") : "").filter(Boolean).join(", ");
       entries.push({
         msg,
         match,
         opts: {
           isInternal,
           senderLabel: fromName ? "From: " + fromName : (fromAddr ? "From: " + fromAddr : ""),
+          ccLabel: ccNames ? "CC: " + ccNames : "",
           dateStr: formatDate(msg.receivedDateTime),
           moveOnIgnore: false
         }
