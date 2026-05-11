@@ -138,9 +138,9 @@
         </bt:Images>
         <bt:Urls>
           <bt:Url id="Commands.Html" DefaultValue="https://ColinZeal42.github.io/outlook-filer/commands.html?v=19"/>
-          <bt:Url id="Setup.Unsent.Html" DefaultValue="https://ColinZeal42.github.io/outlook-filer/setup.html?v=22&amp;mode=unsent"/>
-          <bt:Url id="Setup.Selected.Html" DefaultValue="https://ColinZeal42.github.io/outlook-filer/setup.html?v=22&amp;mode=selected"/>
-          <bt:Url id="Setup.Inbox.Html" DefaultValue="https://ColinZeal42.github.io/outlook-filer/setup.html?v=22&amp;mode=inbox"/>
+          <bt:Url id="Setup.Unsent.Html" DefaultValue="https://ColinZeal42.github.io/outlook-filer/setup.html?mode=unsent"/>
+          <bt:Url id="Setup.Selected.Html" DefaultValue="https://ColinZeal42.github.io/outlook-filer/setup.html?mode=selected"/>
+          <bt:Url id="Setup.Inbox.Html" DefaultValue="https://ColinZeal42.github.io/outlook-filer/setup.html?mode=inbox"/>
         </bt:Urls>
         <bt:ShortStrings>
           <bt:String id="AddInName" DefaultValue="HMF Email Filer"/>
