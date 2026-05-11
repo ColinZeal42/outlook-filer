@@ -7,7 +7,7 @@
   xsi:type="MailApp">
 
   <Id>c41a2c93-abb6-4276-8f11-a47e71353c65</Id>
-  <Version>3.0.3.1</Version>
+  <Version>3.0.3.3</Version>
   <ProviderName>HMF</ProviderName>
   <DefaultLocale>en-US</DefaultLocale>
   <DisplayName DefaultValue="HMF Email Filer"/>
@@ -123,8 +123,8 @@
         </bt:Images>
         <bt:Urls>
           <bt:Url id="Commands.Html" DefaultValue="https://ColinZeal42.github.io/outlook-filer/commands.html?v=19"/>
-          <bt:Url id="Setup.Unsent.Html" DefaultValue="https://ColinZeal42.github.io/outlook-filer/setup.html?v=18&amp;mode=unsent"/>
-          <bt:Url id="Setup.Selected.Html" DefaultValue="https://ColinZeal42.github.io/outlook-filer/setup.html?v=18&amp;mode=selected"/>
+          <bt:Url id="Setup.Unsent.Html" DefaultValue="https://ColinZeal42.github.io/outlook-filer/setup.html?v=20&amp;mode=unsent"/>
+          <bt:Url id="Setup.Selected.Html" DefaultValue="https://ColinZeal42.github.io/outlook-filer/setup.html?v=20&amp;mode=selected"/>
         </bt:Urls>
         <bt:ShortStrings>
           <bt:String id="AddInName" DefaultValue="HMF Email Filer"/>

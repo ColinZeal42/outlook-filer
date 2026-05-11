@@ -233,9 +233,9 @@ async function processUnfiled() {
   btn.disabled = false;
 }
 
-// --- File Selected ---
+// --- File Selected (multi-select via getSelectedItemsAsync, Mailbox 1.13) ---
 
-async function fileSelected() {
+function fileSelected() {
   const btn = document.getElementById("fileSelectedBtn");
   const statusEl = document.getElementById("queue-status");
   const queueEl = document.getElementById("queue");
@@ -254,58 +254,47 @@ async function fileSelected() {
     return;
   }
 
-  const getSelectedFn = Office.context.mailbox.getSelectedMessages ||
-                        Office.context.mailbox.getSelectedMessagesAsync ||
-                        Office.context.mailbox.getSelectedItemsAsync;
-  if (typeof getSelectedFn !== "function") {
-    const available = Object.keys(Office.context.mailbox)
-      .filter(k => k.toLowerCase().includes("select"))
-      .join(", ") || "none found";
-    statusEl.textContent = `Multi-select API not available. Candidates checked: ${available}`;
+  if (!Office.context.requirements.isSetSupported("Mailbox", "1.13")) {
+    statusEl.textContent = "Multi-select requires a newer version of Outlook.";
     btn.disabled = false;
     return;
   }
 
-  getSelectedFn.call(Office.context.mailbox, async (result) => {
+  Office.context.mailbox.getSelectedItemsAsync(async function(asyncResult) {
     try {
-      if (result.status !== Office.AsyncResultStatus.Succeeded) {
-        statusEl.textContent = "Could not read selected emails: " + (result.error && result.error.message);
+      if (asyncResult.status !== Office.AsyncResultStatus.Succeeded) {
+        statusEl.textContent = "Could not read selected emails: " + asyncResult.error.message;
         btn.disabled = false;
         return;
       }
 
-      const ewsIds = result.value || [];
-      if (ewsIds.length === 0) {
-        statusEl.textContent = "No emails selected.";
+      const items = asyncResult.value || [];
+      if (items.length === 0) {
+        statusEl.textContent = "No emails selected. Select emails in the message list first.";
         btn.disabled = false;
         return;
       }
 
-      statusEl.textContent = `Reading ${ewsIds.length} selected email${ewsIds.length !== 1 ? "s" : ""}...`;
+      statusEl.textContent = `Reading ${items.length} selected email${items.length !== 1 ? "s" : ""}...`;
 
-      // Convert EWS IDs → REST IDs
-      const restIds = await Promise.all(ewsIds.map(ewsId => new Promise(resolve => {
+      // Convert EWS IDs to REST IDs
+      const restIds = await Promise.all(items.map(item => new Promise(resolve => {
         Office.context.mailbox.convertToRestId(
-          ewsId,
+          item.itemId,
           Office.MailboxEnums.RestVersion.v2_0,
-          restId => resolve(restId)
+          restId => resolve({ restId, subject: item.subject || "" })
         );
       })));
 
-      // Fetch message details from Graph
+      // Fetch toRecipients for each message for accurate folder matching
       const messages = (await Promise.all(
-        restIds.map(restId =>
+        restIds.map(({ restId, subject }) =>
           fetch(`${GRAPH_BASE}/me/messages/${restId}?$select=id,subject,toRecipients`, {
             headers: { Authorization: "Bearer " + token }
-          }).then(r => r.ok ? r.json() : null).catch(() => null)
+          }).then(r => r.ok ? r.json() : { id: restId, subject, toRecipients: [] })
+           .catch(() => ({ id: restId, subject, toRecipients: [] }))
         )
-      )).filter(Boolean);
-
-      if (messages.length === 0) {
-        statusEl.textContent = "Could not fetch email details.";
-        btn.disabled = false;
-        return;
-      }
+      ));
 
       const folders = parseFolders(foldersJson);
       let matchCount = 0;
@@ -315,12 +304,15 @@ async function fileSelected() {
         const participantText = (msg.toRecipients || []).map(r =>
           r.emailAddress.name + " " + r.emailAddress.address
         ).join(" ");
+
+        if (isCalendarMessage(msg.subject || "")) continue;
+
         const match = matchFolder({ subject: msg.subject || "", participantText }, folders);
         if (renderQueueRow(queueEl, token, msg, match)) matchCount++;
       }
 
-      if (matchCount === 0) {
-        statusEl.textContent = `No case folder matches in ${messages.length} selected email${messages.length !== 1 ? "s" : ""}.`;
+      if (queueEl.children.length === 0) {
+        statusEl.textContent = `No case folder matches found in ${messages.length} selected email${messages.length !== 1 ? "s" : ""}.`;
       } else {
         statusEl.textContent = `${matchCount} email${matchCount !== 1 ? "s" : ""} to review:`;
       }
