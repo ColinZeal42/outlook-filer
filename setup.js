@@ -5,6 +5,8 @@ const GRAPH_BASE = "https://graph.microsoft.com/v1.0";
 const USER_DOMAIN = "hmflaw.com";
 
 let _pendingMode = null;
+let _emailQueue = []; // [{msg, match, opts, done, body}]
+let _emailIndex = 0;
 
 Office.onReady(async () => {
   document.getElementById("connectBtn").addEventListener("click", signIn);
@@ -13,10 +15,10 @@ Office.onReady(async () => {
   document.getElementById("fileSelectedBtn").addEventListener("click", fileSelected);
   document.getElementById("fileInboxBtn").addEventListener("click", fileInbox);
   document.getElementById("ver").textContent = typeof SETUP_VERSION !== "undefined" ? SETUP_VERSION : "?";
+  wireCardButtons();
 
   const params = new URLSearchParams(window.location.search);
   const mode = params.get("mode");
-
   checkStatus();
 
   const token = Office.context.roamingSettings.get("access_token");
@@ -70,7 +72,7 @@ function checkStatus() {
   }
 }
 
-// --- Core email actions ---
+// --- Graph helpers ---
 
 async function moveMessage(token, msgId, destinationId) {
   const res = await fetch(`${GRAPH_BASE}/me/messages/${msgId}/move`, {
@@ -81,121 +83,219 @@ async function moveMessage(token, msgId, destinationId) {
   if (!res.ok) throw new Error("Move failed: " + res.status);
 }
 
-async function fileEmail(token, msgId, folderId, rowEl) {
-  const fileBtn = rowEl.querySelector(".file-btn");
-  const delBtn = rowEl.querySelector(".delete-btn");
-  const ignBtn = rowEl.querySelector(".ignore-btn");
-  if (fileBtn) fileBtn.disabled = true;
-  if (delBtn) delBtn.disabled = true;
-  if (ignBtn) ignBtn.disabled = true;
-  if (fileBtn) fileBtn.textContent = "Filing...";
+async function fetchEmailBody(token, msgId) {
   try {
-    await moveMessage(token, msgId, folderId);
-    if (fileBtn) fileBtn.textContent = "Filed ✓";
-    rowEl.classList.add("done");
+    const res = await fetch(`${GRAPH_BASE}/me/messages/${msgId}?$select=body`, {
+      headers: {
+        Authorization: "Bearer " + token,
+        "Prefer": 'outlook.body-content-type="text"'
+      }
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.body && data.body.content ? data.body.content : null;
   } catch(e) {
-    if (fileBtn) { fileBtn.textContent = "Error"; fileBtn.disabled = false; }
-    if (delBtn) delBtn.disabled = false;
-    if (ignBtn) ignBtn.disabled = false;
+    return null;
   }
 }
 
-async function deleteEmail(token, msgId, rowEl) {
-  const delBtn = rowEl.querySelector(".delete-btn");
-  const ignBtn = rowEl.querySelector(".ignore-btn");
-  const fileBtn = rowEl.querySelector(".file-btn");
-  if (delBtn) delBtn.disabled = true;
-  if (ignBtn) ignBtn.disabled = true;
-  if (fileBtn) fileBtn.disabled = true;
-  if (delBtn) delBtn.textContent = "Deleting...";
-  try {
-    await moveMessage(token, msgId, "deleteditems");
-    if (delBtn) delBtn.textContent = "Deleted ✓";
-    rowEl.classList.add("done");
-  } catch(e) {
-    if (delBtn) { delBtn.textContent = "Error"; delBtn.disabled = false; }
-    if (ignBtn) ignBtn.disabled = false;
-    if (fileBtn) fileBtn.disabled = false;
+// --- Body / ID helpers ---
+
+function extractPreviewLines(text, maxLines) {
+  if (!text) return "";
+  const lines = text.split(/\r?\n/);
+  const result = [];
+  let blankRun = 0;
+  for (const line of lines) {
+    const t = line.trim();
+    if (!t) {
+      if (blankRun === 0 && result.length > 0) result.push("");
+      blankRun++;
+    } else {
+      blankRun = 0;
+      result.push(t);
+    }
+    if (result.length >= maxLines) break;
+  }
+  return result.join("\n").trim();
+}
+
+function convertToRestIdAsync(ewsId) {
+  return new Promise(resolve => {
+    Office.context.mailbox.convertToRestId(ewsId, Office.MailboxEnums.RestVersion.v2_0, resolve);
+  });
+}
+
+function getItemBodyAsync(item) {
+  return new Promise(resolve => {
+    item.body.getAsync(Office.CoercionType.Text, {}, result => {
+      resolve(result.status === Office.AsyncResultStatus.Succeeded ? result.value : null);
+    });
+  });
+}
+
+// --- Email card ---
+
+function wireCardButtons() {
+  document.getElementById("prevEmailBtn").onclick = () => {
+    if (_emailIndex > 0) showEmailAt(_emailIndex - 1);
+  };
+  document.getElementById("nextEmailBtn").onclick = () => {
+    if (_emailIndex < _emailQueue.length - 1) showEmailAt(_emailIndex + 1);
+  };
+  document.getElementById("fileItBtn").onclick = () => cardFileIt();
+  document.getElementById("deleteItBtn").onclick = () => cardDelete();
+  document.getElementById("ignoreItBtn").onclick = () => cardIgnore();
+}
+
+function initEmailCard(entries) {
+  _emailQueue = entries.map(e => ({
+    msg: e.msg,
+    match: e.match,
+    opts: e.opts,
+    done: false,
+    body: e.body !== undefined ? e.body : null
+  }));
+  _emailIndex = 0;
+  document.getElementById("email-card").style.display = "";
+  showEmailAt(0);
+}
+
+async function showEmailAt(index) {
+  _emailIndex = index;
+  const total = _emailQueue.length;
+  const entry = _emailQueue[index];
+
+  document.getElementById("email-counter").textContent = `${index + 1} / ${total}`;
+  document.getElementById("prevEmailBtn").disabled = index === 0;
+  document.getElementById("nextEmailBtn").disabled = index === total - 1;
+
+  document.getElementById("email-subject-text").textContent = entry.msg.subject || "(no subject)";
+
+  const metaParts = [entry.opts.senderLabel, entry.opts.dateStr].filter(Boolean);
+  document.getElementById("email-meta").textContent = metaParts.join("  •  ");
+
+  const matchEl = document.getElementById("email-match-line");
+  if (entry.match) {
+    matchEl.textContent = "→ " + entry.match.displayName;
+    matchEl.className = "";
+  } else if (entry.opts.isInternal) {
+    matchEl.textContent = "Internal email — no filing";
+    matchEl.className = "no-match";
+  } else {
+    matchEl.textContent = "No case folder match";
+    matchEl.className = "no-match";
+  }
+
+  const fileBtn = document.getElementById("fileItBtn");
+  fileBtn.style.display = entry.match ? "inline-block" : "none";
+  fileBtn.textContent = "File It";
+  document.getElementById("deleteItBtn").textContent = "Delete";
+  document.getElementById("ignoreItBtn").textContent = "Ignore";
+
+  if (entry.done) {
+    disableCardBtns();
+  } else {
+    if (entry.match) fileBtn.disabled = false;
+    document.getElementById("deleteItBtn").disabled = false;
+    document.getElementById("ignoreItBtn").disabled = false;
+  }
+
+  const bodyEl = document.getElementById("email-body");
+  if (entry.body !== null) {
+    bodyEl.textContent = entry.body || "(no preview)";
+  } else {
+    bodyEl.textContent = "Loading preview…";
+    const token = Office.context.roamingSettings.get("access_token");
+    const raw = await fetchEmailBody(token, entry.msg.id);
+    entry.body = extractPreviewLines(raw, 10) || "(no preview)";
+    if (_emailIndex === index) bodyEl.textContent = entry.body;
   }
 }
 
-async function ignoreEmail(token, msgId, rowEl, moveToSent) {
-  const delBtn = rowEl.querySelector(".delete-btn");
-  const ignBtn = rowEl.querySelector(".ignore-btn");
-  const fileBtn = rowEl.querySelector(".file-btn");
-  if (delBtn) delBtn.disabled = true;
-  if (ignBtn) ignBtn.disabled = true;
-  if (fileBtn) fileBtn.disabled = true;
-  if (moveToSent) {
-    if (ignBtn) ignBtn.textContent = "Moving...";
+function disableCardBtns() {
+  ["fileItBtn", "deleteItBtn", "ignoreItBtn"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = true;
+  });
+}
+
+function enableCardBtns() {
+  const entry = _emailQueue[_emailIndex];
+  if (!entry || entry.done) return;
+  if (entry.match) document.getElementById("fileItBtn").disabled = false;
+  document.getElementById("deleteItBtn").disabled = false;
+  document.getElementById("ignoreItBtn").disabled = false;
+}
+
+function autoAdvance() {
+  setTimeout(() => {
+    let next = -1;
+    for (let i = _emailIndex + 1; i < _emailQueue.length; i++) {
+      if (!_emailQueue[i].done) { next = i; break; }
+    }
+    if (next !== -1) {
+      showEmailAt(next);
+    } else if (_emailQueue.filter(e => !e.done).length === 0) {
+      document.getElementById("queue-status").textContent = "All done ✓";
+    }
+  }, 700);
+}
+
+async function cardFileIt() {
+  const entry = _emailQueue[_emailIndex];
+  if (!entry || !entry.match || entry.done) return;
+  const token = Office.context.roamingSettings.get("access_token");
+  disableCardBtns();
+  document.getElementById("fileItBtn").textContent = "Filing…";
+  try {
+    await moveMessage(token, entry.msg.id, entry.match.id);
+    entry.done = true;
+    document.getElementById("fileItBtn").textContent = "Filed ✓";
+    autoAdvance();
+  } catch(e) {
+    document.getElementById("fileItBtn").textContent = "Error";
+    enableCardBtns();
+  }
+}
+
+async function cardDelete() {
+  const entry = _emailQueue[_emailIndex];
+  if (!entry || entry.done) return;
+  const token = Office.context.roamingSettings.get("access_token");
+  disableCardBtns();
+  document.getElementById("deleteItBtn").textContent = "Deleting…";
+  try {
+    await moveMessage(token, entry.msg.id, "deleteditems");
+    entry.done = true;
+    document.getElementById("deleteItBtn").textContent = "Deleted ✓";
+    autoAdvance();
+  } catch(e) {
+    document.getElementById("deleteItBtn").textContent = "Error";
+    enableCardBtns();
+  }
+}
+
+async function cardIgnore() {
+  const entry = _emailQueue[_emailIndex];
+  if (!entry || entry.done) return;
+  const token = Office.context.roamingSettings.get("access_token");
+  disableCardBtns();
+  if (entry.opts.moveOnIgnore) {
+    document.getElementById("ignoreItBtn").textContent = "Moving…";
     try {
-      await moveMessage(token, msgId, "SentItems");
-      if (ignBtn) ignBtn.textContent = "Moved ✓";
-      rowEl.classList.add("done");
+      await moveMessage(token, entry.msg.id, "SentItems");
+      entry.done = true;
+      document.getElementById("ignoreItBtn").textContent = "Moved ✓";
+      autoAdvance();
     } catch(e) {
-      if (ignBtn) { ignBtn.textContent = "Error"; ignBtn.disabled = false; }
-      if (delBtn) delBtn.disabled = false;
-      if (fileBtn) fileBtn.disabled = false;
+      document.getElementById("ignoreItBtn").textContent = "Error";
+      enableCardBtns();
     }
   } else {
-    rowEl.classList.add("done");
+    entry.done = true;
+    autoAdvance();
   }
-}
-
-// --- Row rendering ---
-
-function formatDate(dateStr) {
-  if (!dateStr) return "";
-  const d = new Date(dateStr);
-  if (isNaN(d)) return "";
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-}
-
-function renderQueueRow(queueEl, token, msg, match, opts) {
-  opts = opts || {};
-  const subject = msg.subject || "(no subject)";
-  const isInternal = opts.isInternal || false;
-  const senderLabel = opts.senderLabel || "";
-  const dateStr = opts.dateStr || "";
-  const moveOnIgnore = !!opts.moveOnIgnore;
-
-  const row = document.createElement("div");
-  row.className = "queue-row";
-
-  let topHtml = `<div class="queue-top">`;
-  topHtml += `<span class="queue-subject" title="${escapeHtml(subject)}">${escapeHtml(subject.slice(0, 65))}</span>`;
-
-  if (match) {
-    topHtml += `<span class="queue-arrow">→</span>`;
-    topHtml += `<span class="queue-folder" title="${escapeHtml(match.displayName)}">${escapeHtml(match.displayName)}</span>`;
-    topHtml += `<button class="file-btn">File It</button>`;
-  } else if (isInternal) {
-    topHtml += `<span class="queue-badge">(internal)</span>`;
-  } else {
-    topHtml += `<span class="queue-badge">(no match)</span>`;
-  }
-
-  topHtml += `<button class="delete-btn">Delete</button>`;
-  topHtml += `<button class="ignore-btn">Ignore</button>`;
-  topHtml += `</div>`;
-
-  let metaHtml = "";
-  if (senderLabel || dateStr) {
-    const parts = [senderLabel, dateStr].filter(Boolean);
-    metaHtml = `<div class="queue-meta">${escapeHtml(parts.join(" • "))}</div>`;
-  }
-
-  row.innerHTML = topHtml + metaHtml;
-
-  const capturedMsgId = msg.id;
-  if (match) {
-    const capturedFolderId = match.id;
-    row.querySelector(".file-btn").addEventListener("click", () => fileEmail(token, capturedMsgId, capturedFolderId, row));
-  }
-  row.querySelector(".delete-btn").addEventListener("click", () => deleteEmail(token, capturedMsgId, row));
-  row.querySelector(".ignore-btn").addEventListener("click", () => ignoreEmail(token, capturedMsgId, row, moveOnIgnore));
-
-  queueEl.appendChild(row);
 }
 
 // --- Process Unfiled ---
@@ -222,11 +322,10 @@ async function ensureSentUnfiledFolder(token) {
 async function processUnfiled() {
   const btn = document.getElementById("processBtn");
   const statusEl = document.getElementById("queue-status");
-  const queueEl = document.getElementById("queue");
 
   btn.disabled = true;
-  queueEl.innerHTML = "";
-  statusEl.textContent = "Checking Sent-Unfiled...";
+  document.getElementById("email-card").style.display = "none";
+  statusEl.textContent = "Checking Sent-Unfiled…";
 
   const token = Office.context.roamingSettings.get("access_token");
   if (!token) { statusEl.textContent = "Not connected."; btn.disabled = false; return; }
@@ -258,7 +357,7 @@ async function processUnfiled() {
     messages.sort((a, b) => (a.subject || "").localeCompare(b.subject || ""));
 
     const folders = parseFolders(foldersJson);
-    let shownCount = 0;
+    const entries = [];
     const calendarMoves = [];
 
     for (const msg of messages) {
@@ -276,20 +375,28 @@ async function processUnfiled() {
       const match = isInternal ? null : matchFolder({ subject: msg.subject || "", participantText }, folders);
 
       const toNames = (msg.toRecipients || []).map(r => r.emailAddress.name || r.emailAddress.address).join(", ");
-      const senderLabel = toNames ? "To: " + toNames : "";
-      const dateStr = formatDate(msg.sentDateTime);
-
-      renderQueueRow(queueEl, token, msg, match, { isInternal, senderLabel, dateStr, moveOnIgnore: true });
-      shownCount++;
+      entries.push({
+        msg,
+        match,
+        opts: {
+          isInternal,
+          senderLabel: toNames ? "To: " + toNames : "",
+          dateStr: formatDate(msg.sentDateTime),
+          moveOnIgnore: true
+        }
+      });
     }
 
     await Promise.allSettled(calendarMoves);
 
-    if (shownCount === 0) {
+    if (entries.length === 0) {
       statusEl.textContent = "No emails to process.";
-    } else {
-      statusEl.textContent = `${shownCount} email${shownCount !== 1 ? "s" : ""} to review:`;
+      btn.disabled = false;
+      return;
     }
+
+    statusEl.textContent = `${entries.length} email${entries.length !== 1 ? "s" : ""} to review:`;
+    initEmailCard(entries);
   } catch(e) {
     statusEl.textContent = "Error: " + e.message;
   }
@@ -297,15 +404,14 @@ async function processUnfiled() {
   btn.disabled = false;
 }
 
-// --- File Selected (currently open email in reading pane) ---
+// --- File Selected ---
 
-function fileSelected() {
+async function fileSelected() {
   const btn = document.getElementById("fileSelectedBtn");
   const statusEl = document.getElementById("queue-status");
-  const queueEl = document.getElementById("queue");
 
   btn.disabled = true;
-  queueEl.innerHTML = "";
+  document.getElementById("email-card").style.display = "none";
 
   const token = Office.context.roamingSettings.get("access_token");
   if (!token) { statusEl.textContent = "Not connected."; btn.disabled = false; return; }
@@ -324,6 +430,8 @@ function fileSelected() {
     return;
   }
 
+  statusEl.textContent = "Loading…";
+
   const subject = item.subject || "";
   const recipients = item.to || [];
   const emails = recipients.map(r => r.emailAddress);
@@ -333,23 +441,34 @@ function fileSelected() {
   const match = matchFolder({ subject, participantText }, folders);
 
   const toNames = recipients.map(r => r.displayName || r.emailAddress).join(", ");
-  const senderLabel = toNames ? "To: " + toNames : "";
   const dateStr = item.dateTimeCreated ? formatDate(item.dateTimeCreated.toISOString()) : "";
 
-  Office.context.mailbox.convertToRestId(
-    item.itemId,
-    Office.MailboxEnums.RestVersion.v2_0,
-    function(restId) {
-      renderQueueRow(queueEl, token, { id: restId, subject }, match, {
+  try {
+    const [restId, bodyText] = await Promise.all([
+      convertToRestIdAsync(item.itemId),
+      getItemBodyAsync(item)
+    ]);
+
+    const preview = extractPreviewLines(bodyText, 10) || "(no preview)";
+
+    initEmailCard([{
+      msg: { id: restId, subject },
+      match,
+      opts: {
         isInternal: false,
-        senderLabel,
+        senderLabel: toNames ? "To: " + toNames : "",
         dateStr,
         moveOnIgnore: true
-      });
-      statusEl.textContent = "1 email to review:";
-      btn.disabled = false;
-    }
-  );
+      },
+      body: preview
+    }]);
+
+    statusEl.textContent = "1 email to review:";
+  } catch(e) {
+    statusEl.textContent = "Error: " + e.message;
+  }
+
+  btn.disabled = false;
 }
 
 // --- File Inbox ---
@@ -357,11 +476,10 @@ function fileSelected() {
 async function fileInbox() {
   const btn = document.getElementById("fileInboxBtn");
   const statusEl = document.getElementById("queue-status");
-  const queueEl = document.getElementById("queue");
 
   btn.disabled = true;
-  queueEl.innerHTML = "";
-  statusEl.textContent = "Scanning Inbox...";
+  document.getElementById("email-card").style.display = "none";
+  statusEl.textContent = "Scanning Inbox…";
 
   const token = Office.context.roamingSettings.get("access_token");
   if (!token) { statusEl.textContent = "Not connected."; btn.disabled = false; return; }
@@ -391,7 +509,7 @@ async function fileInbox() {
     messages.sort((a, b) => (a.subject || "").localeCompare(b.subject || ""));
 
     const folders = parseFolders(foldersJson);
-    let shownCount = 0;
+    const entries = [];
 
     for (const msg of messages) {
       if (isCalendarMessage(msg.subject || "")) continue;
@@ -403,18 +521,26 @@ async function fileInbox() {
       const isInternal = fromAddr.toLowerCase().endsWith("@" + USER_DOMAIN);
       const match = isInternal ? null : matchFolder({ subject: msg.subject || "", participantText }, folders);
 
-      const senderLabel = fromName ? "From: " + fromName : (fromAddr ? "From: " + fromAddr : "");
-      const dateStr = formatDate(msg.receivedDateTime);
-
-      renderQueueRow(queueEl, token, msg, match, { isInternal, senderLabel, dateStr, moveOnIgnore: false });
-      shownCount++;
+      entries.push({
+        msg,
+        match,
+        opts: {
+          isInternal,
+          senderLabel: fromName ? "From: " + fromName : (fromAddr ? "From: " + fromAddr : ""),
+          dateStr: formatDate(msg.receivedDateTime),
+          moveOnIgnore: false
+        }
+      });
     }
 
-    if (shownCount === 0) {
+    if (entries.length === 0) {
       statusEl.textContent = "No emails in Inbox.";
-    } else {
-      statusEl.textContent = `${shownCount} email${shownCount !== 1 ? "s" : ""} to review:`;
+      btn.disabled = false;
+      return;
     }
+
+    statusEl.textContent = `${entries.length} email${entries.length !== 1 ? "s" : ""} to review:`;
+    initEmailCard(entries);
   } catch(e) {
     statusEl.textContent = "Error: " + e.message;
   }
@@ -551,6 +677,9 @@ function matchFolder(email, folders) {
   return null;
 }
 
-function escapeHtml(str) {
-  return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+function formatDate(dateStr) {
+  if (!dateStr) return "";
+  const d = new Date(dateStr);
+  if (isNaN(d)) return "";
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
