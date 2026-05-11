@@ -52,13 +52,13 @@ function onMessageSend(event) {
               return event.completed({ allowEvent: true });
             }
 
-            // Check for task-pane approval of this match
-            var approvalJson = Office.context.roamingSettings.get("filing_approved");
-            if (approvalJson) {
+            // Second send: pending already set for this folder → file and send
+            var pendingJson = Office.context.roamingSettings.get("pending_filing");
+            if (pendingJson) {
               try {
-                var approval = JSON.parse(approvalJson);
-                if (approval.folderId === match.id && Date.now() - approval.ts < 300000) {
-                  Office.context.roamingSettings.remove("filing_approved");
+                var pending = JSON.parse(pendingJson);
+                if (pending.folderId === match.id && Date.now() - pending.ts < 300000) {
+                  Office.context.roamingSettings.remove("pending_filing");
                   Office.context.roamingSettings.saveAsync(function() {});
                   moveAfterSend(token, subject, match.id);
                   return event.completed({ allowEvent: true });
@@ -66,14 +66,14 @@ function onMessageSend(event) {
               } catch(e) {}
             }
 
-            // First pass: store pending state and block
+            // First send: prompt and block
             var pending = { folderId: match.id, folderName: match.displayName, subject: subject, ts: Date.now() };
             Office.context.roamingSettings.set("pending_filing", JSON.stringify(pending));
             Office.context.roamingSettings.saveAsync(function() {});
 
             event.completed({
               allowEvent: false,
-              errorMessage: "File to \"" + match.displayName + "\"? Open HMF Setup pane to confirm, then click Send again.",
+              errorMessage: "File to \"" + match.displayName + "\"? Close this dialog to confirm (or click Send again on desktop).",
             });
 
           } catch(e) {
@@ -91,13 +91,9 @@ function onMessageSend(event) {
 
 Office.actions.associate("onMessageSend", onMessageSend);
 
-// --- Auth ---
-
 function getAccessToken() {
   return Office.context.roamingSettings.get("access_token") || null;
 }
-
-// --- Folders ---
 
 function getCaseFolders() {
   var stored = Office.context.roamingSettings.get("case_folders");
@@ -110,8 +106,6 @@ function getCaseFolders() {
     };
   });
 }
-
-// --- Move after send ---
 
 function moveAfterSend(token, subject, folderId) {
   var sentAfter = new Date(Date.now() - 15000).toISOString();
@@ -136,8 +130,6 @@ function moveAfterSend(token, subject, folderId) {
   }
   setTimeout(tryMove, 2000);
 }
-
-// --- Graph ---
 
 function graphGet(token, url, onSuccess, onError) {
   var xhr = new XMLHttpRequest();
@@ -165,8 +157,6 @@ function graphPost(token, url, body, onSuccess, onError) {
   xhr.onerror = function() { if (onError) onError(new Error("Network error")); };
   xhr.send(JSON.stringify(body));
 }
-
-// --- Matching ---
 
 var CALENDAR_PREFIXES = ["accepted:", "declined:", "tentative:", "cancelled:", "meeting request:"];
 
