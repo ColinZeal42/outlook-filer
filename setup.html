@@ -5,7 +5,7 @@
   <title>HMF Email Filer Setup</title>
   <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
   <script>
-    var SETUP_VERSION = "v25";
+    var SETUP_VERSION = "v26";
     var s = document.createElement("script");
     s.src = "setup.js?t=" + Date.now();
     document.head.appendChild(s);
@@ -19,6 +19,7 @@
     #connectBtn { background: #0078d4; display: none; }
     #refreshBtn { display: none; margin-left: 6px; background: #555; }
     #processBtn { display: none; margin-top: 12px; background: #107c10; }
+    #setBaselineBtn { display: none; margin-top: 6px; margin-left: 6px; background: #8764b8; }
     #fileInboxBtn { display: none; margin-top: 6px; margin-left: 6px; background: #c43e1c; }
     #queue-status { font-size: 13px; margin-top: 12px; color: #555; min-height: 18px; }
     /* Email card */
@@ -49,6 +50,7 @@
   <button id="refreshBtn" class="btn">Refresh Folders</button>
   <br/>
   <button id="processBtn" class="btn">File Unsent Emails</button>
+  <button id="setBaselineBtn" class="btn">Set Baseline</button>
   <button id="fileInboxBtn" class="btn">File Inbox</button>
   <div id="queue-status"></div>
   <div id="email-card">

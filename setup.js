@@ -12,6 +12,7 @@ Office.onReady(async () => {
   document.getElementById("connectBtn").addEventListener("click", signIn);
   document.getElementById("refreshBtn").addEventListener("click", refreshFolders);
   document.getElementById("processBtn").addEventListener("click", processUnfiled);
+  document.getElementById("setBaselineBtn").addEventListener("click", setBaseline);
   document.getElementById("fileInboxBtn").addEventListener("click", fileInbox);
   document.getElementById("ver").textContent = typeof SETUP_VERSION !== "undefined" ? SETUP_VERSION : "?";
   wireCardButtons();
@@ -332,32 +333,14 @@ async function cardIgnore() {
 
 // --- Process Unfiled ---
 
-async function ensureSentUnfiledFolder(token) {
-  const res = await fetch(`${GRAPH_BASE}/me/mailFolders?$top=100`, {
-    headers: { Authorization: "Bearer " + token }
-  });
-  if (!res.ok) throw new Error("Graph " + res.status);
-  const data = await res.json();
-  const existing = (data.value || []).find(f => f.displayName === "Sent-Unfiled");
-  if (existing) return existing.id;
-
-  const createRes = await fetch(`${GRAPH_BASE}/me/mailFolders`, {
-    method: "POST",
-    headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
-    body: JSON.stringify({ displayName: "Sent-Unfiled" })
-  });
-  if (!createRes.ok) throw new Error("Could not create Sent-Unfiled folder");
-  const created = await createRes.json();
-  return created.id;
-}
-
 async function processUnfiled() {
   const btn = document.getElementById("processBtn");
+  const baselineBtn = document.getElementById("setBaselineBtn");
   const statusEl = document.getElementById("queue-status");
 
   btn.disabled = true;
+  baselineBtn.style.display = "none";
   document.getElementById("email-card").style.display = "none";
-  statusEl.textContent = "Checking Sent-Unfiled…";
 
   const token = Office.context.roamingSettings.get("access_token");
   if (!token) { statusEl.textContent = "Not connected."; btn.disabled = false; return; }
@@ -369,35 +352,44 @@ async function processUnfiled() {
     return;
   }
 
-  try {
-    const sentUnfiledId = await ensureSentUnfiledFolder(token);
+  const lastRun = Office.context.roamingSettings.get("sent_last_run");
+  if (!lastRun) {
+    statusEl.textContent = "No baseline set. Set a baseline to begin tracking sent emails.";
+    baselineBtn.style.display = "inline-block";
+    btn.disabled = false;
+    return;
+  }
 
+  statusEl.textContent = "Checking Sent Items…";
+  const newTimestamp = new Date().toISOString();
+
+  try {
     const msgsRes = await fetch(
-      `${GRAPH_BASE}/me/mailFolders/${sentUnfiledId}/messages` +
-      `?$select=id,subject,toRecipients,ccRecipients,sentDateTime,from&$top=50&$orderby=sentDateTime asc`,
+      `${GRAPH_BASE}/me/mailFolders/SentItems/messages` +
+      `?$filter=sentDateTime gt ${lastRun}` +
+      `&$top=100&$orderby=sentDateTime asc` +
+      `&$select=id,subject,toRecipients,ccRecipients,sentDateTime,from`,
       { headers: { Authorization: "Bearer " + token } }
     );
     if (!msgsRes.ok) throw new Error("Graph " + msgsRes.status);
     const messages = (await msgsRes.json()).value || [];
 
-    if (messages.length === 0) {
-      statusEl.textContent = "No emails to process.";
+    Office.context.roamingSettings.set("sent_last_run", newTimestamp);
+    Office.context.roamingSettings.saveAsync(() => {});
+
+    const nonCalendar = messages.filter(m => !isCalendarMessage(m.subject || ""));
+    nonCalendar.sort((a, b) => (a.subject || "").localeCompare(b.subject || ""));
+
+    if (nonCalendar.length === 0) {
+      statusEl.textContent = "No new sent emails to process.";
       btn.disabled = false;
       return;
     }
 
-    messages.sort((a, b) => (a.subject || "").localeCompare(b.subject || ""));
-
     const folders = parseFolders(foldersJson);
     const entries = [];
-    const calendarMoves = [];
 
-    for (const msg of messages) {
-      if (isCalendarMessage(msg.subject || "")) {
-        calendarMoves.push(moveMessage(token, msg.id, "SentItems").catch(() => {}));
-        continue;
-      }
-
+    for (const msg of nonCalendar) {
       const allRecipients = [...(msg.toRecipients || []), ...(msg.ccRecipients || [])];
       const emails = allRecipients.map(r => r.emailAddress.address);
       const participantText = allRecipients.map(r =>
@@ -417,17 +409,9 @@ async function processUnfiled() {
           senderLabel: toNames ? "To: " + toNames : "",
           ccLabel: ccNames ? "CC: " + ccNames : "",
           dateStr: formatDate(msg.sentDateTime),
-          moveOnIgnore: true
+          moveOnIgnore: false
         }
       });
-    }
-
-    await Promise.allSettled(calendarMoves);
-
-    if (entries.length === 0) {
-      statusEl.textContent = "No emails to process.";
-      btn.disabled = false;
-      return;
     }
 
     statusEl.textContent = `${entries.length} email${entries.length !== 1 ? "s" : ""} to review:`;
@@ -437,6 +421,18 @@ async function processUnfiled() {
   }
 
   btn.disabled = false;
+}
+
+function setBaseline() {
+  const baselineBtn = document.getElementById("setBaselineBtn");
+  const statusEl = document.getElementById("queue-status");
+  baselineBtn.disabled = true;
+  Office.context.roamingSettings.set("sent_last_run", new Date().toISOString());
+  Office.context.roamingSettings.saveAsync(() => {
+    baselineBtn.style.display = "none";
+    baselineBtn.disabled = false;
+    statusEl.textContent = "Baseline set. Next run will file emails sent from now on.";
+  });
 }
 
 // --- File Inbox ---
