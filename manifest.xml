@@ -79,7 +79,6 @@
                       <bt:Image size="80" resid="Icon80"/>
                     </Icon>
                     <Action xsi:type="ShowTaskpane">
-                      <TaskpaneId>HmfSetup</TaskpaneId>
                       <SourceLocation resid="Setup.Html"/>
                     </Action>
                   </Control>
@@ -99,15 +98,15 @@
       </Hosts>
 
       <Resources>
-        <bt:Urls>
-          <bt:Url id="Commands.Html" DefaultValue="https://ColinZeal42.github.io/outlook-filer/commands.html"/>
-          <bt:Url id="Setup.Html" DefaultValue="https://ColinZeal42.github.io/outlook-filer/setup.html"/>
-        </bt:Urls>
         <bt:Images>
           <bt:Image id="Icon16" DefaultValue="https://ColinZeal42.github.io/outlook-filer/assets/icon-64.png"/>
           <bt:Image id="Icon32" DefaultValue="https://ColinZeal42.github.io/outlook-filer/assets/icon-64.png"/>
           <bt:Image id="Icon80" DefaultValue="https://ColinZeal42.github.io/outlook-filer/assets/icon-128.png"/>
         </bt:Images>
+        <bt:Urls>
+          <bt:Url id="Commands.Html" DefaultValue="https://ColinZeal42.github.io/outlook-filer/commands.html"/>
+          <bt:Url id="Setup.Html" DefaultValue="https://ColinZeal42.github.io/outlook-filer/setup.html"/>
+        </bt:Urls>
         <bt:ShortStrings>
           <bt:String id="AddInName" DefaultValue="HMF Email Filer"/>
           <bt:String id="SetupLabel" DefaultValue="HMF Setup"/>
