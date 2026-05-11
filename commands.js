@@ -30,8 +30,7 @@ async function onMessageSend(event) {
 
     const token = await getAccessToken();
     if (!token) {
-      // Not set up yet — let the email send normally
-      return event.completed({ allowEvent: true });
+      return event.completed({ allowEvent: false, errorMessage: "DEBUG: No token found in roamingSettings." });
     }
 
     // Second pass: user clicked "Send Anyway" to confirm filing
@@ -43,7 +42,13 @@ async function onMessageSend(event) {
     }
 
     // First pass: find matching folder
-    const folders = await getCaseFolders(token);
+    let folders;
+    try {
+      folders = await getCaseFolders(token);
+    } catch (e) {
+      return event.completed({ allowEvent: false, errorMessage: "DEBUG: getCaseFolders failed: " + e.message });
+    }
+
     const match = matchFolder(
       {
         subject,
@@ -54,7 +59,7 @@ async function onMessageSend(event) {
     );
 
     if (!match) {
-      return event.completed({ allowEvent: true });
+      return event.completed({ allowEvent: false, errorMessage: `DEBUG: No folder match. Subject="${subject}", ${folders.length} folders checked.` });
     }
 
     await setPending({ folderId: match.id, folderName: match.displayName });
@@ -63,8 +68,7 @@ async function onMessageSend(event) {
       errorMessage: `File to "${match.displayName}"? Click Send Anyway to confirm.`,
     });
   } catch (err) {
-    console.error("onMessageSend error:", err);
-    event.completed({ allowEvent: true });
+    event.completed({ allowEvent: false, errorMessage: "DEBUG error: " + err.message });
   }
 }
 
