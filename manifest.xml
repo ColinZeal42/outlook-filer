@@ -7,7 +7,7 @@
   xsi:type="MailApp">
 
   <Id>c41a2c93-abb6-4276-8f11-a47e71353c65</Id>
-  <Version>3.0.0.2</Version>
+  <Version>3.0.0.3</Version>
   <ProviderName>HMF</ProviderName>
   <DefaultLocale>en-US</DefaultLocale>
   <DisplayName DefaultValue="HMF Email Filer"/>
@@ -58,7 +58,7 @@
         <Host xsi:type="MailHost">
           <Runtimes>
             <Runtime resid="Setup.Html" lifetime="long"/>
-            <Runtime resid="Commands.Html" lifetime="short"/>
+            <Runtime resid="Commands.Html" lifetime="long"/>
           </Runtimes>
           <DesktopFormFactor>
             <FunctionFile resid="Commands.Html"/>

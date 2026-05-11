@@ -32,10 +32,10 @@ async function onMessageSend(event) {
     }
 
     // Second pass: user clicked "Send Anyway" to confirm filing
-    const pending = await getPending();
+    const pending = getPending();
     if (pending) {
       moveAfterSend(token, itemId, pending.folderId);
-      await clearPending();
+      clearPending();
       return event.completed({ allowEvent: true });
     }
 
@@ -60,7 +60,7 @@ async function onMessageSend(event) {
       return event.completed({ allowEvent: false, errorMessage: `DEBUG: No folder match. Subject="${subject}", ${folders.length} folders checked.` });
     }
 
-    await setPending({ folderId: match.id, folderName: match.displayName });
+    setPending({ folderId: match.id, folderName: match.displayName });
     event.completed({
       allowEvent: false,
       errorMessage: `File to "${match.displayName}"? Click Send Anyway to confirm.`,
@@ -97,25 +97,22 @@ async function getAccessToken() {
   return data.access_token || null;
 }
 
-// --- Pending confirmation ---
+// --- Pending confirmation (in-memory; requires lifetime="long" runtime) ---
 
-async function getPending() {
-  const s = await OfficeRuntime.storage.getItems(["pendingFolderId", "pendingFolderName", "pendingTs"]);
-  if (!s.pendingFolderId || !s.pendingTs) return null;
-  if (Date.now() - parseInt(s.pendingTs) > 90000) return null;
-  return { folderId: s.pendingFolderId, folderName: s.pendingFolderName };
+let _pending = null;
+
+function getPending() {
+  if (!_pending) return null;
+  if (Date.now() - _pending.ts > 90000) { _pending = null; return null; }
+  return _pending;
 }
 
-async function setPending(folder) {
-  await OfficeRuntime.storage.setItems({
-    pendingFolderId: folder.folderId,
-    pendingFolderName: folder.folderName,
-    pendingTs: String(Date.now()),
-  });
+function setPending(folder) {
+  _pending = { folderId: folder.folderId, folderName: folder.folderName, ts: Date.now() };
 }
 
-async function clearPending() {
-  await OfficeRuntime.storage.removeItems(["pendingFolderId", "pendingFolderName", "pendingTs"]);
+function clearPending() {
+  _pending = null;
 }
 
 // --- Graph ---
