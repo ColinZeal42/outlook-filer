@@ -494,7 +494,7 @@ async function fileInbox() {
   try {
     const msgsRes = await fetch(
       `${GRAPH_BASE}/me/mailFolders/Inbox/messages` +
-      `?$select=id,subject,from,toRecipients,receivedDateTime&$top=50&$orderby=receivedDateTime desc`,
+      `?$select=id,subject,from,toRecipients,ccRecipients,receivedDateTime&$top=50&$orderby=receivedDateTime desc`,
       { headers: { Authorization: "Bearer " + token } }
     );
     if (!msgsRes.ok) throw new Error("Graph " + msgsRes.status);
@@ -516,12 +516,13 @@ async function fileInbox() {
 
       const fromAddr = msg.from && msg.from.emailAddress ? msg.from.emailAddress.address || "" : "";
       const fromName = msg.from && msg.from.emailAddress ? msg.from.emailAddress.name || "" : "";
-      const toEmails = (msg.toRecipients || []).map(r => r.emailAddress ? r.emailAddress.address || "" : "");
+      const allRecipients = [...(msg.toRecipients || []), ...(msg.ccRecipients || [])];
+      const recipientEmails = allRecipients.map(r => r.emailAddress ? r.emailAddress.address || "" : "");
       const participantText = [fromName, fromAddr,
-        ...(msg.toRecipients || []).map(r => r.emailAddress ? (r.emailAddress.name || "") + " " + (r.emailAddress.address || "") : "")
+        ...allRecipients.map(r => r.emailAddress ? (r.emailAddress.name || "") + " " + (r.emailAddress.address || "") : "")
       ].join(" ");
 
-      const isInternal = fromAddr.toLowerCase().endsWith("@" + USER_DOMAIN) && !hasExternalRecipient(toEmails, USER_DOMAIN);
+      const isInternal = fromAddr.toLowerCase().endsWith("@" + USER_DOMAIN) && !hasExternalRecipient(recipientEmails, USER_DOMAIN);
       const match = isInternal ? null : matchFolder({ subject: msg.subject || "", participantText }, folders);
 
       entries.push({
