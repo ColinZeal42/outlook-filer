@@ -59,7 +59,7 @@ function onMessageSend(event) {
               var sentTs = Date.now();
               setTimeout(function() {
                 promptAndMove(token, subject, sentTs, match);
-              }, 2000);
+              }, 10000);
             }
 
           } catch(e) { event.completed({ allowEvent: true }); }
