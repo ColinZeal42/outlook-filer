@@ -4,7 +4,8 @@
   <meta charset="UTF-8"/>
   <title>HMF Email Filer Setup</title>
   <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
-  <script src="setup.js"></script>
+  <script>var SETUP_VERSION = "v11";</script>
+  <script src="setup.js?v=11"></script>
   <style>
     body { font-family: 'Segoe UI', sans-serif; padding: 24px; color: #1a1a1a; margin: 0; }
     h2 { font-size: 16px; margin: 0 0 16px; }
@@ -18,5 +19,6 @@
   <div id="status">Checking status...</div>
   <button id="connectBtn">Connect to Microsoft</button>
   <button id="refreshBtn" style="display:none; margin-left:8px; background:#555;">Refresh Folders</button>
+  <div style="margin-top:16px; font-size:11px; color:#999;" id="ver"></div>
 </body>
 </html>

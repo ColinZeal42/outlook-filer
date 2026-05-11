@@ -6,6 +6,7 @@ const GRAPH_BASE = "https://graph.microsoft.com/v1.0";
 Office.onReady(async () => {
   document.getElementById("connectBtn").addEventListener("click", signIn);
   document.getElementById("refreshBtn").addEventListener("click", refreshFolders);
+  document.getElementById("ver").textContent = typeof SETUP_VERSION !== "undefined" ? SETUP_VERSION : "?";
   checkStatus();
 });
 
