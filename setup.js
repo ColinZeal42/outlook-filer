@@ -5,7 +5,7 @@ const GRAPH_BASE = "https://graph.microsoft.com/v1.0";
 const USER_DOMAIN = "hmflaw.com";
 
 let _pendingMode = null;
-let _emailQueue = []; // [{msg, match, opts, done, body}]
+let _emailQueue = []; // [{msg, match, opts, done, body, isReplied, isForwarded}]
 let _emailIndex = 0;
 
 Office.onReady(async () => {
@@ -17,8 +17,11 @@ Office.onReady(async () => {
   document.getElementById("ver").textContent = typeof SETUP_VERSION !== "undefined" ? SETUP_VERSION : "?";
   wireCardButtons();
 
-  const params = new URLSearchParams(window.location.search);
-  const mode = params.get("mode");
+  // SETUP_MODE is set as a global by the mode-specific HTML files (setup-unsent.html etc.)
+  // Fall back to URL param for direct loads of setup.html
+  const mode = (typeof window.SETUP_MODE !== "undefined" ? window.SETUP_MODE : null)
+    || new URLSearchParams(window.location.search).get("mode");
+
   checkStatus();
 
   const token = Office.context.roamingSettings.get("access_token");
@@ -83,19 +86,29 @@ async function moveMessage(token, msgId, destinationId) {
   if (!res.ok) throw new Error("Move failed: " + res.status);
 }
 
-async function fetchEmailBody(token, msgId) {
+// Fetches body (plain text) + replied/forwarded status in one Graph call.
+async function fetchEmailDetails(token, msgId) {
   try {
-    const res = await fetch(`${GRAPH_BASE}/me/messages/${msgId}?$select=body`, {
-      headers: {
-        Authorization: "Bearer " + token,
-        "Prefer": 'outlook.body-content-type="text"'
+    const res = await fetch(
+      `${GRAPH_BASE}/me/messages/${msgId}?$select=body` +
+      `&$expand=singleValueExtendedProperties($filter=id eq 'Integer 0x1081')`,
+      {
+        headers: {
+          Authorization: "Bearer " + token,
+          "Prefer": 'outlook.body-content-type="text"'
+        }
       }
-    });
-    if (!res.ok) return null;
+    );
+    if (!res.ok) return { body: null, isReplied: false, isForwarded: false };
     const data = await res.json();
-    return data.body && data.body.content ? data.body.content : null;
+    const verb = parseInt(((data.singleValueExtendedProperties || [])[0] || {}).value || "0");
+    return {
+      body: data.body && data.body.content ? data.body.content : null,
+      isReplied: verb === 102 || verb === 103,
+      isForwarded: verb === 104
+    };
   } catch(e) {
-    return null;
+    return { body: null, isReplied: false, isForwarded: false };
   }
 }
 
@@ -154,7 +167,9 @@ function initEmailCard(entries) {
     match: e.match,
     opts: e.opts,
     done: false,
-    body: e.body !== undefined ? e.body : null
+    body: e.body !== undefined ? e.body : null,
+    isReplied: e.isReplied,
+    isForwarded: e.isForwarded
   }));
   _emailIndex = 0;
   document.getElementById("email-card").style.display = "block";
@@ -171,6 +186,16 @@ async function showEmailAt(index) {
   document.getElementById("nextEmailBtn").disabled = index === total - 1;
 
   document.getElementById("email-subject-text").textContent = entry.msg.subject || "(no subject)";
+
+  // Reply/forward badge — shown if fetched, hidden while pending
+  const badgeEl = document.getElementById("email-reply-badge");
+  if (entry.isReplied !== undefined) {
+    const show = entry.isReplied || entry.isForwarded;
+    badgeEl.style.display = show ? "block" : "none";
+    badgeEl.textContent = entry.isForwarded ? "↪ Forwarded" : "↩ Replied";
+  } else {
+    badgeEl.style.display = "none";
+  }
 
   const line1 = [entry.opts.senderLabel, entry.opts.dateStr].filter(Boolean).join("  •  ");
   const line2 = entry.opts.toLabel || "";
@@ -203,15 +228,23 @@ async function showEmailAt(index) {
     document.getElementById("ignoreItBtn").disabled = false;
   }
 
+  // Body + reply status — lazy-load from Graph if not yet fetched
   const bodyEl = document.getElementById("email-body");
   if (entry.body !== null) {
     bodyEl.textContent = entry.body || "(no preview)";
   } else {
     bodyEl.textContent = "Loading preview…";
     const token = Office.context.roamingSettings.get("access_token");
-    const raw = await fetchEmailBody(token, entry.msg.id);
-    entry.body = extractPreviewLines(raw, 10) || "(no preview)";
-    if (_emailIndex === index) bodyEl.textContent = entry.body;
+    const details = await fetchEmailDetails(token, entry.msg.id);
+    entry.body = extractPreviewLines(details.body, 10) || "(no preview)";
+    entry.isReplied = details.isReplied;
+    entry.isForwarded = details.isForwarded;
+    if (_emailIndex === index) {
+      bodyEl.textContent = entry.body;
+      const show = details.isReplied || details.isForwarded;
+      badgeEl.style.display = show ? "block" : "none";
+      badgeEl.textContent = details.isForwarded ? "↪ Forwarded" : "↩ Replied";
+    }
   }
 }
 
@@ -439,8 +472,12 @@ async function fileSelected() {
 
   const subject = item.subject || "";
   const allRecipients = [...(item.to || []), ...(item.cc || [])];
-  const emails = allRecipients.map(r => r.emailAddress);
-  const participantText = allRecipients.map(r => r.displayName + " " + r.emailAddress).join(" ");
+  const fromAddr = item.from ? (item.from.emailAddress || "") : "";
+  const fromName = item.from ? (item.from.displayName || "") : "";
+  const participantText = [
+    ...allRecipients.map(r => r.displayName + " " + r.emailAddress),
+    fromName, fromAddr
+  ].join(" ");
 
   const folders = parseFolders(foldersJson);
   const match = matchFolder({ subject, participantText }, folders);
@@ -450,12 +487,15 @@ async function fileSelected() {
   const dateStr = item.dateTimeCreated ? formatDate(item.dateTimeCreated.toISOString()) : "";
 
   try {
-    const [restId, bodyText] = await Promise.all([
+    const [restId, officeBody] = await Promise.all([
       convertToRestIdAsync(item.itemId),
-      getItemBodyAsync(item)
+      getItemBodyAsync(item).catch(() => null)
     ]);
 
-    const preview = extractPreviewLines(bodyText, 10) || "(no preview)";
+    const details = await fetchEmailDetails(token, restId)
+      .catch(() => ({ body: null, isReplied: false, isForwarded: false }));
+
+    const preview = extractPreviewLines(details.body || officeBody, 10) || "(no preview)";
 
     initEmailCard([{
       msg: { id: restId, subject },
@@ -467,7 +507,9 @@ async function fileSelected() {
         dateStr,
         moveOnIgnore: true
       },
-      body: preview
+      body: preview,
+      isReplied: details.isReplied,
+      isForwarded: details.isForwarded
     }]);
 
     statusEl.textContent = "1 email to review:";
