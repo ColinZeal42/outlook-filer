@@ -1,7 +1,5 @@
 "use strict";
 
-const DIALOG_URL = "https://ColinZeal42.github.io/outlook-filer/dialog.html";
-const AUTH_URL = "https://ColinZeal42.github.io/outlook-filer/auth.html";
 const USER_DOMAIN = "hmflaw.com";
 const GRAPH_BASE = "https://graph.microsoft.com/v1.0";
 
@@ -28,66 +26,70 @@ async function onMessageSend(event) {
       return event.completed({ allowEvent: true });
     }
 
+    // Second pass: user clicked "Send Anyway" to confirm filing
+    const pending = await getPending();
+    if (pending) {
+      const token = await getAccessToken();
+      moveAfterSend(token, itemId, pending.folderId);
+      await clearPending();
+      return event.completed({ allowEvent: true });
+    }
+
+    // First pass: find matching folder
     const token = await getAccessToken();
-
     const folders = await getCaseFolders(token);
-    const emailData = {
-      subject,
-      participantText: recipients.map(r => `${r.displayName} ${r.emailAddress}`).join(" "),
-      bodyText: body,
-    };
+    const match = matchFolder(
+      {
+        subject,
+        participantText: recipients.map(r => `${r.displayName} ${r.emailAddress}`).join(" "),
+        bodyText: body,
+      },
+      folders
+    );
 
-    const match = matchFolder(emailData, folders);
     if (!match) {
       return event.completed({ allowEvent: true });
     }
 
-    const confirmed = await showConfirmDialog(match);
-    if (confirmed) moveAfterSend(token, itemId, match.id);
-    event.completed({ allowEvent: true });
+    await setPending({ folderId: match.id, folderName: match.displayName });
+    event.completed({
+      allowEvent: false,
+      errorMessage: `File to "${match.displayName}"? Click Send Anyway to confirm.`,
+    });
   } catch (err) {
     console.error("onMessageSend error:", err);
-    event.completed({ allowEvent: true });
+    event.completed({ allowEvent: false, errorMessage: "HMF Filer: " + (err.message || String(err)) });
   }
+}
+
+// --- Pending confirmation (OfficeRuntime.storage) ---
+
+async function getPending() {
+  const s = await OfficeRuntime.storage.getItems(["pendingFolderId", "pendingFolderName", "pendingTs"]);
+  if (!s.pendingFolderId || !s.pendingTs) return null;
+  if (Date.now() - parseInt(s.pendingTs) > 90000) return null; // expire after 90s
+  return { folderId: s.pendingFolderId, folderName: s.pendingFolderName };
+}
+
+async function setPending(folder) {
+  await OfficeRuntime.storage.setItems({
+    pendingFolderId: folder.folderId,
+    pendingFolderName: folder.folderName,
+    pendingTs: String(Date.now()),
+  });
+}
+
+async function clearPending() {
+  await OfficeRuntime.storage.removeItems(["pendingFolderId", "pendingFolderName", "pendingTs"]);
 }
 
 // --- Auth ---
 
 async function getAccessToken() {
-  try {
-    return await Office.auth.getAccessToken({
-      allowSignInPrompt: false,
-      allowConsentPrompt: false,
-      forMSGraphAccess: true,
-    });
-  } catch (e) {
-    throw new Error("SSO failed (code=" + (e.code ?? e.message) + "); add-in must be deployed via Centralized Deployment");
-  }
-}
-
-function getTokenViaDialog() {
-  return new Promise((resolve, reject) => {
-    Office.context.ui.displayDialogAsync(
-      AUTH_URL,
-      { height: 60, width: 30, displayInIframe: true },
-      result => {
-        if (result.status !== Office.AsyncResultStatus.Succeeded) {
-          return reject(new Error("Cannot open auth dialog: code=" + result.error.code + " " + result.error.message));
-        }
-        const dlg = result.value;
-        dlg.addEventHandler(Office.EventType.DialogMessageReceived, args => {
-          dlg.close();
-          try {
-            const msg = JSON.parse(args.message);
-            if (msg.token) resolve(msg.token);
-            else reject(new Error(msg.error || "Auth failed"));
-          } catch (e) { reject(e); }
-        });
-        dlg.addEventHandler(Office.EventType.DialogEventReceived, () => {
-          reject(new Error("Auth dialog closed"));
-        });
-      }
-    );
+  return Office.auth.getAccessToken({
+    allowSignInPrompt: false,
+    allowConsentPrompt: false,
+    forMSGraphAccess: true,
   });
 }
 
@@ -162,24 +164,6 @@ function matchFolder(email, folders) {
     }
   }
   return null;
-}
-
-// --- Confirm dialog ---
-
-function showConfirmDialog(folder) {
-  return new Promise(resolve => {
-    const url = `${DIALOG_URL}#folderName=${encodeURIComponent(folder.displayName)}&folderId=${encodeURIComponent(folder.id)}`;
-    Office.context.ui.displayDialogAsync(url, { height: 30, width: 35, displayInIframe: true }, result => {
-      if (result.status !== Office.AsyncResultStatus.Succeeded) return resolve(false);
-      const dlg = result.value;
-      dlg.addEventHandler(Office.EventType.DialogMessageReceived, args => {
-        dlg.close();
-        try { resolve(JSON.parse(args.message).action === "move"); }
-        catch (e) { resolve(false); }
-      });
-      dlg.addEventHandler(Office.EventType.DialogEventReceived, () => resolve(false));
-    });
-  });
 }
 
 // --- Office.js helpers ---
