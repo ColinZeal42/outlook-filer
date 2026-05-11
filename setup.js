@@ -173,8 +173,9 @@ async function showEmailAt(index) {
   document.getElementById("email-subject-text").textContent = entry.msg.subject || "(no subject)";
 
   const line1 = [entry.opts.senderLabel, entry.opts.dateStr].filter(Boolean).join("  •  ");
-  const line2 = entry.opts.ccLabel || "";
-  document.getElementById("email-meta").textContent = [line1, line2].filter(Boolean).join("\n");
+  const line2 = entry.opts.toLabel || "";
+  const line3 = entry.opts.ccLabel || "";
+  document.getElementById("email-meta").textContent = [line1, line2, line3].filter(Boolean).join("\n");
 
   const matchEl = document.getElementById("email-match-line");
   if (entry.match) {
@@ -531,6 +532,7 @@ async function fileInbox() {
       const isInternal = fromAddr.toLowerCase().endsWith("@" + USER_DOMAIN) && !hasExternalRecipient(recipientEmails, USER_DOMAIN);
       const match = isInternal ? null : matchFolder({ subject: msg.subject || "", participantText }, folders);
 
+      const toNames = (msg.toRecipients || []).map(r => r.emailAddress ? (r.emailAddress.name || r.emailAddress.address || "") : "").filter(Boolean).join(", ");
       const ccNames = (msg.ccRecipients || []).map(r => r.emailAddress ? (r.emailAddress.name || r.emailAddress.address || "") : "").filter(Boolean).join(", ");
       entries.push({
         msg,
@@ -538,6 +540,7 @@ async function fileInbox() {
         opts: {
           isInternal,
           senderLabel: fromName ? "From: " + fromName : (fromAddr ? "From: " + fromAddr : ""),
+          toLabel: toNames ? "To: " + toNames : "",
           ccLabel: ccNames ? "CC: " + ccNames : "",
           dateStr: formatDate(msg.receivedDateTime),
           moveOnIgnore: false
