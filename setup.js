@@ -12,7 +12,6 @@ Office.onReady(async () => {
   document.getElementById("connectBtn").addEventListener("click", signIn);
   document.getElementById("refreshBtn").addEventListener("click", refreshFolders);
   document.getElementById("processBtn").addEventListener("click", processUnfiled);
-  document.getElementById("fileSelectedBtn").addEventListener("click", fileSelected);
   document.getElementById("fileInboxBtn").addEventListener("click", fileInbox);
   document.getElementById("ver").textContent = typeof SETUP_VERSION !== "undefined" ? SETUP_VERSION : "?";
   wireCardButtons();
@@ -32,8 +31,6 @@ Office.onReady(async () => {
       signIn();
     } else if (mode === "unsent") {
       processUnfiled();
-    } else if (mode === "selected") {
-      fileSelected();
     } else if (mode === "inbox") {
       fileInbox();
     }
@@ -48,9 +45,9 @@ function checkStatus() {
   const foldersJson = Office.context.roamingSettings.get("case_folders");
   const folderCount = foldersJson ? JSON.parse(foldersJson).length : 0;
   const statusEl = document.getElementById("status");
+  const connectBtn = document.getElementById("connectBtn");
   const refreshBtn = document.getElementById("refreshBtn");
   const processBtn = document.getElementById("processBtn");
-  const fileSelectedBtn = document.getElementById("fileSelectedBtn");
   const fileInboxBtn = document.getElementById("fileInboxBtn");
 
   if (refreshToken) {
@@ -61,16 +58,16 @@ function checkStatus() {
       statusEl.textContent = "Token expired. Click Connect to refresh.";
       statusEl.style.color = "darkorange";
     }
+    connectBtn.style.display = "none";
     refreshBtn.style.display = "inline-block";
     processBtn.style.display = "inline-block";
-    fileSelectedBtn.style.display = "inline-block";
     fileInboxBtn.style.display = "inline-block";
   } else {
     statusEl.textContent = "Not connected. Click Connect to sign in.";
     statusEl.style.color = "#555";
+    connectBtn.style.display = "inline-block";
     refreshBtn.style.display = "none";
     processBtn.style.display = "none";
-    fileSelectedBtn.style.display = "none";
     fileInboxBtn.style.display = "none";
   }
 }
@@ -442,84 +439,6 @@ async function processUnfiled() {
   btn.disabled = false;
 }
 
-// --- File Selected ---
-
-async function fileSelected() {
-  const btn = document.getElementById("fileSelectedBtn");
-  const statusEl = document.getElementById("queue-status");
-
-  btn.disabled = true;
-  document.getElementById("email-card").style.display = "none";
-
-  const token = Office.context.roamingSettings.get("access_token");
-  if (!token) { statusEl.textContent = "Not connected."; btn.disabled = false; return; }
-
-  const foldersJson = Office.context.roamingSettings.get("case_folders");
-  if (!foldersJson) {
-    statusEl.textContent = "No case folders cached. Click Refresh Folders first.";
-    btn.disabled = false;
-    return;
-  }
-
-  const item = Office.context.mailbox.item;
-  if (!item) {
-    statusEl.textContent = "No email is currently open.";
-    btn.disabled = false;
-    return;
-  }
-
-  statusEl.textContent = "Loading…";
-
-  const subject = item.subject || "";
-  const allRecipients = [...(item.to || []), ...(item.cc || [])];
-  const fromAddr = item.from ? (item.from.emailAddress || "") : "";
-  const fromName = item.from ? (item.from.displayName || "") : "";
-  const participantText = [
-    ...allRecipients.map(r => r.displayName + " " + r.emailAddress),
-    fromName, fromAddr
-  ].join(" ");
-
-  const folders = parseFolders(foldersJson);
-  const match = matchFolder({ subject, participantText }, folders);
-
-  const toNames = (item.to || []).map(r => r.displayName || r.emailAddress).join(", ");
-  const ccNames = (item.cc || []).map(r => r.displayName || r.emailAddress).join(", ");
-  const dateStr = item.dateTimeCreated ? formatDate(item.dateTimeCreated.toISOString()) : "";
-
-  try {
-    const [restId, officeBody] = await Promise.all([
-      convertToRestIdAsync(item.itemId),
-      getItemBodyAsync(item).catch(() => null)
-    ]);
-
-    const details = await fetchEmailDetails(token, restId)
-      .catch(() => ({ body: null, isReplied: false, isForwarded: false }));
-
-    const preview = extractPreviewLines(details.body || officeBody, 10) || "(no preview)";
-
-    initEmailCard([{
-      msg: { id: restId, subject },
-      match,
-      opts: {
-        isInternal: false,
-        senderLabel: toNames ? "To: " + toNames : "",
-        ccLabel: ccNames ? "CC: " + ccNames : "",
-        dateStr,
-        moveOnIgnore: true
-      },
-      body: preview,
-      isReplied: details.isReplied,
-      isForwarded: details.isForwarded
-    }]);
-
-    statusEl.textContent = "1 email to review:";
-  } catch(e) {
-    statusEl.textContent = "Error: " + e.message;
-  }
-
-  btn.disabled = false;
-}
-
 // --- File Inbox ---
 
 async function fileInbox() {
@@ -678,7 +597,6 @@ function signIn() {
                 const pendingMode = _pendingMode;
                 _pendingMode = null;
                 if (pendingMode === "unsent") processUnfiled();
-                else if (pendingMode === "selected") fileSelected();
                 else if (pendingMode === "inbox") fileInbox();
               }
             } else {

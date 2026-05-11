@@ -7,7 +7,7 @@
   xsi:type="MailApp">
 
   <Id>c41a2c93-abb6-4276-8f11-a47e71353c65</Id>
-  <Version>3.0.5.0</Version>
+  <Version>3.0.5.1</Version>
   <ProviderName>HMF</ProviderName>
   <DefaultLocale>en-US</DefaultLocale>
   <DisplayName DefaultValue="HMF Email Filer"/>
@@ -90,21 +90,6 @@
                           <SourceLocation resid="Setup.Unsent.Html"/>
                         </Action>
                       </Item>
-                      <Item id="fileSelectedItem">
-                        <Label resid="FileSelectedLabel"/>
-                        <Supertip>
-                          <Title resid="FileSelectedLabel"/>
-                          <Description resid="FileSelectedDesc"/>
-                        </Supertip>
-                        <Icon>
-                          <bt:Image size="16" resid="Icon16"/>
-                          <bt:Image size="32" resid="Icon32"/>
-                          <bt:Image size="80" resid="Icon80"/>
-                        </Icon>
-                        <Action xsi:type="ShowTaskpane">
-                          <SourceLocation resid="Setup.Selected.Html"/>
-                        </Action>
-                      </Item>
                       <Item id="fileInboxItem">
                         <Label resid="FileInboxLabel"/>
                         <Supertip>
@@ -139,21 +124,18 @@
         <bt:Urls>
           <bt:Url id="Commands.Html" DefaultValue="https://ColinZeal42.github.io/outlook-filer/commands.html?v=19"/>
           <bt:Url id="Setup.Unsent.Html" DefaultValue="https://ColinZeal42.github.io/outlook-filer/setup-unsent.html"/>
-          <bt:Url id="Setup.Selected.Html" DefaultValue="https://ColinZeal42.github.io/outlook-filer/setup-selected.html"/>
           <bt:Url id="Setup.Inbox.Html" DefaultValue="https://ColinZeal42.github.io/outlook-filer/setup-inbox.html"/>
         </bt:Urls>
         <bt:ShortStrings>
           <bt:String id="AddInName" DefaultValue="HMF Email Filer"/>
           <bt:String id="SetupLabel" DefaultValue="HMF Setup"/>
           <bt:String id="FileUnsentLabel" DefaultValue="File Unsent Emails"/>
-          <bt:String id="FileSelectedLabel" DefaultValue="File Selected"/>
           <bt:String id="FileInboxLabel" DefaultValue="File Inbox Emails"/>
         </bt:ShortStrings>
         <bt:LongStrings>
           <bt:String id="AddInDescription" DefaultValue="Files sent emails into matching case folders."/>
           <bt:String id="SetupDesc" DefaultValue="Connect to Microsoft to enable automatic email filing."/>
           <bt:String id="FileUnsentDesc" DefaultValue="Process emails waiting in Sent-Unfiled."/>
-          <bt:String id="FileSelectedDesc" DefaultValue="File the currently open email."/>
           <bt:String id="FileInboxDesc" DefaultValue="Scan Inbox for emails matching case folders."/>
         </bt:LongStrings>
       </Resources>

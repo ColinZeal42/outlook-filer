@@ -16,10 +16,9 @@
     #status { font-size: 13px; margin-bottom: 14px; padding: 8px 12px; border-radius: 4px; background: #f3f3f3; }
     .btn { padding: 7px 16px; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }
     .btn:disabled { background: #aaa; cursor: default; }
-    #connectBtn { background: #0078d4; }
+    #connectBtn { background: #0078d4; display: none; }
     #refreshBtn { display: none; margin-left: 6px; background: #555; }
     #processBtn { display: none; margin-top: 12px; background: #107c10; }
-    #fileSelectedBtn { display: none; margin-top: 6px; margin-left: 6px; background: #8764b8; }
     #fileInboxBtn { display: none; margin-top: 6px; margin-left: 6px; background: #c43e1c; }
     #queue-status { font-size: 13px; margin-top: 12px; color: #555; min-height: 18px; }
     /* Email card */
@@ -50,7 +49,6 @@
   <button id="refreshBtn" class="btn">Refresh Folders</button>
   <br/>
   <button id="processBtn" class="btn">File Unsent Emails</button>
-  <button id="fileSelectedBtn" class="btn">File This Email</button>
   <button id="fileInboxBtn" class="btn">File Inbox</button>
   <div id="queue-status"></div>
   <div id="email-card">
