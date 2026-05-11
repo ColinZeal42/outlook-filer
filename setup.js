@@ -255,9 +255,13 @@ async function fileSelected() {
   }
 
   const getSelectedFn = Office.context.mailbox.getSelectedMessages ||
-                        Office.context.mailbox.getSelectedMessagesAsync;
+                        Office.context.mailbox.getSelectedMessagesAsync ||
+                        Office.context.mailbox.getSelectedItemsAsync;
   if (typeof getSelectedFn !== "function") {
-    statusEl.textContent = "Multi-select is not available on this platform. Use File Unsent Emails instead.";
+    const available = Object.keys(Office.context.mailbox)
+      .filter(k => k.toLowerCase().includes("select"))
+      .join(", ") || "none found";
+    statusEl.textContent = `Multi-select API not available. Candidates checked: ${available}`;
     btn.disabled = false;
     return;
   }
