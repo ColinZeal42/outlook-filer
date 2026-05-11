@@ -51,21 +51,18 @@ function checkStatus() {
   const processBtn = document.getElementById("processBtn");
   const fileInboxBtn = document.getElementById("fileInboxBtn");
 
-  if (refreshToken) {
-    if (Date.now() < expiry) {
-      statusEl.textContent = `Connected. ${folderCount} case folder${folderCount !== 1 ? "s" : ""} cached.`;
-      statusEl.style.color = "green";
-    } else {
-      statusEl.textContent = "Token expired. Click Connect to refresh.";
-      statusEl.style.color = "darkorange";
-    }
+  if (refreshToken && Date.now() < expiry) {
+    statusEl.textContent = `Connected. ${folderCount} case folder${folderCount !== 1 ? "s" : ""} cached.`;
+    statusEl.style.color = "green";
     connectBtn.style.display = "none";
     refreshBtn.style.display = "inline-block";
     processBtn.style.display = "inline-block";
     fileInboxBtn.style.display = "inline-block";
   } else {
-    statusEl.textContent = "Not connected. Click Connect to sign in.";
-    statusEl.style.color = "#555";
+    statusEl.textContent = refreshToken
+      ? "Token expired. Click Connect to refresh."
+      : "Not connected. Click Connect to sign in.";
+    statusEl.style.color = refreshToken ? "darkorange" : "#555";
     connectBtn.style.display = "inline-block";
     refreshBtn.style.display = "none";
     processBtn.style.display = "none";
