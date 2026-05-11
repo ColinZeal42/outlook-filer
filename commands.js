@@ -5,9 +5,7 @@ const AUTH_TOKEN_URL = "https://login.microsoftonline.com/hmflaw.com/oauth2/v2.0
 const USER_DOMAIN = "hmflaw.com";
 const GRAPH_BASE = "https://graph.microsoft.com/v1.0";
 
-Office.onReady(() => {
-  Office.actions.associate("onMessageSend", onMessageSend);
-});
+Office.actions.associate("onMessageSend", onMessageSend);
 
 async function onMessageSend(event) {
   try {
