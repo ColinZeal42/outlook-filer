@@ -4,20 +4,20 @@ const AUTH_URL = "https://ColinZeal42.github.io/outlook-filer/auth.html";
 
 Office.onReady(async () => {
   document.getElementById("connectBtn").addEventListener("click", signIn);
-  await checkStatus();
+  checkStatus();
 });
 
-async function checkStatus() {
-  const stored = await OfficeRuntime.storage.getItems(["access_token", "token_expiry", "refresh_token"]);
+function checkStatus() {
+  const refreshToken = Office.context.roamingSettings.get("refresh_token");
+  const expiry = parseInt(Office.context.roamingSettings.get("token_expiry") || "0");
   const statusEl = document.getElementById("status");
 
-  if (stored.refresh_token) {
-    const expiry = parseInt(stored.token_expiry || "0");
+  if (refreshToken) {
     if (Date.now() < expiry) {
       statusEl.textContent = "Connected. Token valid until " + new Date(expiry).toLocaleTimeString();
       statusEl.style.color = "green";
     } else {
-      statusEl.textContent = "Token expired — will refresh automatically on next send. Reconnect if filing stops working.";
+      statusEl.textContent = "Token will auto-refresh on next send. Reconnect if filing stops working.";
       statusEl.style.color = "darkorange";
     }
   } else {
@@ -46,26 +46,35 @@ function signIn() {
 
       const dlg = result.value;
 
-      dlg.addEventHandler(Office.EventType.DialogMessageReceived, async args => {
+      dlg.addEventHandler(Office.EventType.DialogMessageReceived, args => {
         dlg.close();
         try {
           const msg = JSON.parse(args.message);
           if (msg.token) {
-            await OfficeRuntime.storage.setItems({
-              access_token: msg.token,
-              token_expiry: String(msg.expiry || (Date.now() + 3600000)),
-              ...(msg.refreshToken ? { refresh_token: msg.refreshToken } : {}),
+            Office.context.roamingSettings.set("access_token", msg.token);
+            Office.context.roamingSettings.set("token_expiry", String(msg.expiry || (Date.now() + 3600000)));
+            if (msg.refreshToken) {
+              Office.context.roamingSettings.set("refresh_token", msg.refreshToken);
+            }
+            Office.context.roamingSettings.saveAsync(saveResult => {
+              if (saveResult.status === Office.AsyncResultStatus.Succeeded) {
+                checkStatus();
+              } else {
+                statusEl.textContent = "Error saving credentials: " + saveResult.error.message;
+                statusEl.style.color = "red";
+              }
+              btn.disabled = false;
             });
-            await checkStatus();
           } else {
             statusEl.textContent = "Sign-in failed: " + (msg.error || "Unknown error");
             statusEl.style.color = "red";
+            btn.disabled = false;
           }
         } catch (e) {
           statusEl.textContent = "Error: " + e.message;
           statusEl.style.color = "red";
+          btn.disabled = false;
         }
-        btn.disabled = false;
       });
 
       dlg.addEventHandler(Office.EventType.DialogEventReceived, () => {

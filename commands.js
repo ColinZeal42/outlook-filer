@@ -71,16 +71,13 @@ async function onMessageSend(event) {
 // --- Auth (OfficeRuntime.storage) ---
 
 async function getAccessToken() {
-  const stored = await OfficeRuntime.storage.getItems(["access_token", "token_expiry", "refresh_token"]);
-  const expiry = parseInt(stored.token_expiry || "0");
+  const refreshToken = Office.context.roamingSettings.get("refresh_token");
+  if (!refreshToken) return null;
 
-  if (stored.access_token && Date.now() < expiry - 300000) {
-    return stored.access_token;
-  }
+  const accessToken = Office.context.roamingSettings.get("access_token");
+  const expiry = parseInt(Office.context.roamingSettings.get("token_expiry") || "0");
 
-  if (!stored.refresh_token) {
-    return null;
-  }
+  if (accessToken && Date.now() < expiry - 300000) return accessToken;
 
   const resp = await fetch(AUTH_TOKEN_URL, {
     method: "POST",
@@ -88,22 +85,14 @@ async function getAccessToken() {
     body: new URLSearchParams({
       grant_type: "refresh_token",
       client_id: AUTH_CLIENT_ID,
-      refresh_token: stored.refresh_token,
+      refresh_token: refreshToken,
       scope: "https://graph.microsoft.com/Mail.ReadWrite offline_access",
     }),
   });
 
   if (!resp.ok) return null;
   const data = await resp.json();
-  if (!data.access_token) return null;
-
-  await OfficeRuntime.storage.setItems({
-    access_token: data.access_token,
-    token_expiry: String(Date.now() + data.expires_in * 1000),
-    ...(data.refresh_token ? { refresh_token: data.refresh_token } : {}),
-  });
-
-  return data.access_token;
+  return data.access_token || null;
 }
 
 // --- Pending confirmation ---
