@@ -18,12 +18,12 @@ async function onMessageSend(event) {
     ]);
 
     if (isCalendarMessage(subject)) {
-      return event.completed({ allowEvent: true });
+      return event.completed({ allowEvent: false, errorMessage: `HMF debug: calendar skip. Subject: "${subject}"` });
     }
 
     const emails = recipients.map(r => r.emailAddress);
     if (!hasExternalRecipient(emails, USER_DOMAIN)) {
-      return event.completed({ allowEvent: true });
+      return event.completed({ allowEvent: false, errorMessage: `HMF debug: all internal. Emails: ${emails.join(", ")}` });
     }
 
     // Second pass: user clicked "Send Anyway" to confirm filing
@@ -32,7 +32,7 @@ async function onMessageSend(event) {
       const token = await getAccessToken();
       moveAfterSend(token, itemId, pending.folderId);
       await clearPending();
-      return event.completed({ allowEvent: true });
+      return event.completed({ allowEvent: false, errorMessage: `HMF debug: filed to "${pending.folderName}" and sent.` });
     }
 
     // First pass: find matching folder
