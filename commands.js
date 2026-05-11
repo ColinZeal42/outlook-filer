@@ -1,6 +1,8 @@
 "use strict";
 
 var USER_DOMAIN = "hmflaw.com";
+var GRAPH_BASE = "https://graph.microsoft.com/v1.0";
+var CONFIRM_URL = "https://ColinZeal42.github.io/outlook-filer/confirm.html";
 
 Office.onReady();
 
@@ -31,9 +33,8 @@ function onMessageSend(event) {
               return event.completed({ allowEvent: true });
             }
 
-            if (!Office.context.roamingSettings.get("access_token")) {
-              return event.completed({ allowEvent: true });
-            }
+            var token = Office.context.roamingSettings.get("access_token");
+            if (!token) { return event.completed({ allowEvent: true }); }
 
             var stored = Office.context.roamingSettings.get("case_folders");
             if (!stored) { return event.completed({ allowEvent: true }); }
@@ -51,13 +52,15 @@ function onMessageSend(event) {
 
             var match = matchFolder({ subject: subject, participantText: participantText }, folders);
 
-            if (match) {
-              var pending = { folderId: match.id, folderName: match.displayName, subject: subject, ts: Date.now() };
-              Office.context.roamingSettings.set("pending_filing", JSON.stringify(pending));
-              Office.context.roamingSettings.saveAsync(function() {});
-            }
-
+            // Allow send first, then prompt
             event.completed({ allowEvent: true });
+
+            if (match) {
+              var sentTs = Date.now();
+              setTimeout(function() {
+                promptAndMove(token, subject, sentTs, match);
+              }, 2000);
+            }
 
           } catch(e) { event.completed({ allowEvent: true }); }
         });
@@ -67,6 +70,79 @@ function onMessageSend(event) {
 }
 
 Office.actions.associate("onMessageSend", onMessageSend);
+
+function promptAndMove(token, subject, sentTs, match) {
+  var url = CONFIRM_URL +
+    "?folder=" + encodeURIComponent(match.displayName) +
+    "&subject=" + encodeURIComponent(subject.slice(0, 60));
+
+  Office.context.ui.displayDialogAsync(url, { height: 25, width: 35, displayInIframe: false },
+    function(result) {
+      if (result.status !== Office.AsyncResultStatus.Succeeded) return;
+      var dlg = result.value;
+      dlg.addEventHandler(Office.EventType.DialogMessageReceived, function(args) {
+        dlg.close();
+        if (args.message === "yes") {
+          moveAfterSend(token, subject, sentTs, match.id);
+        }
+      });
+      dlg.addEventHandler(Office.EventType.DialogEventReceived, function() {});
+    }
+  );
+}
+
+function moveAfterSend(token, subject, sentTs, folderId) {
+  var sentAfter = new Date(sentTs - 15000).toISOString();
+  var safeSubject = subject.replace(/'/g, "''");
+  var attempt = 0;
+
+  function tryMove() {
+    var filter = encodeURIComponent(
+      "subject eq '" + safeSubject + "' and sentDateTime ge " + sentAfter
+    );
+    graphGet(token,
+      GRAPH_BASE + "/me/mailFolders/SentItems/messages?$filter=" + filter + "&$orderby=sentDateTime desc&$select=id&$top=1",
+      function(data) {
+        var msgId = data && data.value && data.value[0] && data.value[0].id;
+        if (msgId) {
+          graphPost(token, GRAPH_BASE + "/me/messages/" + msgId + "/move", { destinationId: folderId }, function() {});
+        } else if (attempt < 5) {
+          attempt++;
+          setTimeout(tryMove, 2000);
+        }
+      },
+      function() { if (attempt < 5) { attempt++; setTimeout(tryMove, 2000); } }
+    );
+  }
+  tryMove();
+}
+
+function graphGet(token, url, onSuccess, onError) {
+  var xhr = new XMLHttpRequest();
+  xhr.open("GET", url);
+  xhr.setRequestHeader("Authorization", "Bearer " + token);
+  xhr.onload = function() {
+    if (xhr.status >= 200 && xhr.status < 300) {
+      try { onSuccess(JSON.parse(xhr.responseText)); } catch(e) { if (onError) onError(e); }
+    } else { if (onError) onError(new Error("Graph " + xhr.status)); }
+  };
+  xhr.onerror = function() { if (onError) onError(new Error("Network error")); };
+  xhr.send();
+}
+
+function graphPost(token, url, body, onSuccess, onError) {
+  var xhr = new XMLHttpRequest();
+  xhr.open("POST", url);
+  xhr.setRequestHeader("Authorization", "Bearer " + token);
+  xhr.setRequestHeader("Content-Type", "application/json");
+  xhr.onload = function() {
+    if (xhr.status >= 200 && xhr.status < 300) {
+      try { if (onSuccess) onSuccess(JSON.parse(xhr.responseText)); } catch(e) {}
+    } else { if (onError) onError(new Error("Graph " + xhr.status)); }
+  };
+  xhr.onerror = function() { if (onError) onError(new Error("Network error")); };
+  xhr.send(JSON.stringify(body));
+}
 
 var CALENDAR_PREFIXES = ["accepted:", "declined:", "tentative:", "cancelled:", "meeting request:"];
 
