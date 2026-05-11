@@ -37,28 +37,9 @@ function onMessageSend(event) {
               return event.completed({ allowEvent: true });
             }
 
-            var pending = getPending();
-            if (pending) {
-              if (item.getItemIdAsync) {
-                item.getItemIdAsync(function(idResult) {
-                  if (idResult.status === Office.AsyncResultStatus.Succeeded) {
-                    moveAfterSend(token, idResult.value, pending.folderId);
-                  }
-                  clearPending();
-                  event.completed({ allowEvent: true });
-                });
-              } else {
-                clearPending();
-                event.completed({ allowEvent: true });
-              }
-              return;
-            }
-
             var folders;
-            try {
-              folders = getCaseFolders();
-            } catch(e) {
-              return event.completed({ allowEvent: false, errorMessage: "HMF Setup: " + e.message });
+            try { folders = getCaseFolders(); } catch(e) {
+              return event.completed({ allowEvent: true });
             }
 
             var participantText = recipients.map(function(r) {
@@ -71,10 +52,28 @@ function onMessageSend(event) {
               return event.completed({ allowEvent: true });
             }
 
-            setPending({ folderId: match.id, folderName: match.displayName });
+            // Check for task-pane approval of this match
+            var approvalJson = Office.context.roamingSettings.get("filing_approved");
+            if (approvalJson) {
+              try {
+                var approval = JSON.parse(approvalJson);
+                if (approval.folderId === match.id && Date.now() - approval.ts < 300000) {
+                  Office.context.roamingSettings.remove("filing_approved");
+                  Office.context.roamingSettings.saveAsync(function() {});
+                  moveAfterSend(token, subject, match.id);
+                  return event.completed({ allowEvent: true });
+                }
+              } catch(e) {}
+            }
+
+            // First pass: store pending state and block
+            var pending = { folderId: match.id, folderName: match.displayName, subject: subject, ts: Date.now() };
+            Office.context.roamingSettings.set("pending_filing", JSON.stringify(pending));
+            Office.context.roamingSettings.saveAsync(function() {});
+
             event.completed({
               allowEvent: false,
-              errorMessage: "File to \"" + match.displayName + "\"? Click Send Anyway to confirm.",
+              errorMessage: "File to \"" + match.displayName + "\"? Open HMF Setup pane to confirm, then click Send again.",
             });
 
           } catch(e) {
@@ -98,11 +97,11 @@ function getAccessToken() {
   return Office.context.roamingSettings.get("access_token") || null;
 }
 
-// --- Folders (cached in roamingSettings by setup pane) ---
+// --- Folders ---
 
 function getCaseFolders() {
   var stored = Office.context.roamingSettings.get("case_folders");
-  if (!stored) throw new Error("No folders cached. Open HMF Setup and connect.");
+  if (!stored) throw new Error("No folders cached.");
   return JSON.parse(stored).map(function(f) {
     return {
       displayName: f.displayName,
@@ -112,51 +111,33 @@ function getCaseFolders() {
   });
 }
 
-// --- Pending confirmation (in-memory; requires lifetime="long" runtime) ---
+// --- Move after send ---
 
-var _pending = null;
-
-function getPending() {
-  if (!_pending) return null;
-  if (Date.now() - _pending.ts > 90000) { _pending = null; return null; }
-  return _pending;
-}
-
-function setPending(folder) {
-  _pending = { folderId: folder.folderId, folderName: folder.folderName, ts: Date.now() };
-}
-
-function clearPending() {
-  _pending = null;
-}
-
-// --- Graph (fire-and-forget move after send) ---
-
-function moveAfterSend(token, itemId, folderId) {
-  moveMessage(token, itemId, folderId);
-}
-
-function moveMessage(token, itemId, folderId) {
+function moveAfterSend(token, subject, folderId) {
+  var sentAfter = new Date(Date.now() - 15000).toISOString();
+  var safeSubject = subject.replace(/'/g, "''");
   var attempt = 0;
+
   function tryMove() {
-    var enc = encodeURIComponent("internetMessageId eq '" + itemId + "'");
-    graphGet(token, GRAPH_BASE + "/me/mailFolders/SentItems/messages?$filter=" + enc + "&$select=id&$top=1",
+    var filter = encodeURIComponent("subject eq '" + safeSubject + "' and sentDateTime ge " + sentAfter);
+    graphGet(token,
+      GRAPH_BASE + "/me/mailFolders/SentItems/messages?$filter=" + filter + "&$orderby=sentDateTime desc&$select=id&$top=1",
       function(data) {
         var msgId = data && data.value && data.value[0] && data.value[0].id;
         if (msgId) {
           graphPost(token, GRAPH_BASE + "/me/messages/" + msgId + "/move", { destinationId: folderId }, function() {});
-        } else if (attempt < 4) {
+        } else if (attempt < 5) {
           attempt++;
           setTimeout(tryMove, 2000);
         }
       },
-      function() {
-        if (attempt < 4) { attempt++; setTimeout(tryMove, 2000); }
-      }
+      function() { if (attempt < 5) { attempt++; setTimeout(tryMove, 2000); } }
     );
   }
-  setTimeout(tryMove, 1000);
+  setTimeout(tryMove, 2000);
 }
+
+// --- Graph ---
 
 function graphGet(token, url, onSuccess, onError) {
   var xhr = new XMLHttpRequest();
@@ -165,9 +146,7 @@ function graphGet(token, url, onSuccess, onError) {
   xhr.onload = function() {
     if (xhr.status >= 200 && xhr.status < 300) {
       try { onSuccess(JSON.parse(xhr.responseText)); } catch(e) { if (onError) onError(e); }
-    } else {
-      if (onError) onError(new Error("Graph " + xhr.status));
-    }
+    } else { if (onError) onError(new Error("Graph " + xhr.status)); }
   };
   xhr.onerror = function() { if (onError) onError(new Error("Network error")); };
   xhr.send();
@@ -181,9 +160,7 @@ function graphPost(token, url, body, onSuccess, onError) {
   xhr.onload = function() {
     if (xhr.status >= 200 && xhr.status < 300) {
       try { if (onSuccess) onSuccess(JSON.parse(xhr.responseText)); } catch(e) {}
-    } else {
-      if (onError) onError(new Error("Graph " + xhr.status));
-    }
+    } else { if (onError) onError(new Error("Graph " + xhr.status)); }
   };
   xhr.onerror = function() { if (onError) onError(new Error("Network error")); };
   xhr.send(JSON.stringify(body));

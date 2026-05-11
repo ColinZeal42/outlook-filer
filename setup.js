@@ -6,9 +6,19 @@ const GRAPH_BASE = "https://graph.microsoft.com/v1.0";
 Office.onReady(async () => {
   document.getElementById("connectBtn").addEventListener("click", signIn);
   document.getElementById("refreshBtn").addEventListener("click", refreshFolders);
+  document.getElementById("confirmBtn").addEventListener("click", confirmFiling);
+  document.getElementById("cancelBtn").addEventListener("click", cancelFiling);
   document.getElementById("ver").textContent = typeof SETUP_VERSION !== "undefined" ? SETUP_VERSION : "?";
-  checkStatus();
+  await loadAndCheck();
 });
+
+async function loadAndCheck() {
+  await new Promise(resolve =>
+    Office.context.roamingSettings.loadAsync(resolve)
+  );
+  checkStatus();
+  checkPending();
+}
 
 function checkStatus() {
   const refreshToken = Office.context.roamingSettings.get("refresh_token");
@@ -34,6 +44,56 @@ function checkStatus() {
   }
 }
 
+function checkPending() {
+  const pendingJson = Office.context.roamingSettings.get("pending_filing");
+  const pendingEl = document.getElementById("pending");
+  const pendingMsg = document.getElementById("pendingMsg");
+
+  if (!pendingJson) {
+    pendingEl.style.display = "none";
+    return;
+  }
+
+  try {
+    const pending = JSON.parse(pendingJson);
+    if (Date.now() - pending.ts > 300000) {
+      Office.context.roamingSettings.remove("pending_filing");
+      Office.context.roamingSettings.saveAsync(() => {});
+      pendingEl.style.display = "none";
+      return;
+    }
+    pendingMsg.textContent = `File "${pending.subject}" to "${pending.folderName}"?`;
+    pendingEl.dataset.folderId = pending.folderId;
+    pendingEl.style.display = "block";
+  } catch(e) {
+    pendingEl.style.display = "none";
+  }
+}
+
+function confirmFiling() {
+  const pendingJson = Office.context.roamingSettings.get("pending_filing");
+  if (!pendingJson) return;
+
+  try {
+    const pending = JSON.parse(pendingJson);
+    const approval = { folderId: pending.folderId, ts: Date.now() };
+    Office.context.roamingSettings.set("filing_approved", JSON.stringify(approval));
+    Office.context.roamingSettings.remove("pending_filing");
+    Office.context.roamingSettings.saveAsync(() => {
+      document.getElementById("pending").style.display = "none";
+      document.getElementById("status").textContent = "Approved. Click Send again in your email.";
+      document.getElementById("status").style.color = "green";
+    });
+  } catch(e) {}
+}
+
+function cancelFiling() {
+  Office.context.roamingSettings.remove("pending_filing");
+  Office.context.roamingSettings.saveAsync(() => {
+    document.getElementById("pending").style.display = "none";
+  });
+}
+
 async function fetchCaseFolders(token) {
   const res = await fetch(`${GRAPH_BASE}/me/mailFolders?$top=100&$expand=childFolders($top=100)`, {
     headers: { Authorization: "Bearer " + token },
@@ -57,7 +117,7 @@ async function refreshFolders() {
     const folders = await fetchCaseFolders(token);
     Office.context.roamingSettings.set("case_folders", JSON.stringify(folders));
     Office.context.roamingSettings.saveAsync(() => { btn.disabled = false; checkStatus(); });
-  } catch (e) {
+  } catch(e) {
     statusEl.textContent = "Error refreshing folders: " + e.message;
     statusEl.style.color = "red";
     btn.disabled = false;
@@ -99,17 +159,11 @@ function signIn() {
           statusEl.style.color = "#555";
 
           let folders = [];
-          try {
-            folders = await fetchCaseFolders(msg.token);
-          } catch (e) {
-            statusEl.textContent = "Warning: could not fetch folders: " + e.message;
-          }
+          try { folders = await fetchCaseFolders(msg.token); } catch(e) {}
 
           Office.context.roamingSettings.set("access_token", msg.token);
           Office.context.roamingSettings.set("token_expiry", String(msg.expiry || (Date.now() + 3600000)));
-          if (msg.refreshToken) {
-            Office.context.roamingSettings.set("refresh_token", msg.refreshToken);
-          }
+          if (msg.refreshToken) Office.context.roamingSettings.set("refresh_token", msg.refreshToken);
           Office.context.roamingSettings.set("case_folders", JSON.stringify(folders));
 
           Office.context.roamingSettings.saveAsync(saveResult => {
@@ -121,7 +175,7 @@ function signIn() {
             }
             btn.disabled = false;
           });
-        } catch (e) {
+        } catch(e) {
           statusEl.textContent = "Error: " + e.message;
           statusEl.style.color = "red";
           btn.disabled = false;
