@@ -10,11 +10,9 @@ Office.actions.associate("onMessageSend", onMessageSend);
 async function onMessageSend(event) {
   try {
     const item = Office.context.mailbox.item;
-    const [subject, recipients, body, itemId] = await Promise.all([
+    const [subject, recipients] = await Promise.all([
       getAsync(item.subject),
       getAsync(item.to),
-      getBodyAsync(item),
-      getItemIdAsync(item),
     ]);
 
     if (isCalendarMessage(subject)) {
@@ -31,15 +29,16 @@ async function onMessageSend(event) {
       return event.completed({ allowEvent: false, errorMessage: "DEBUG: No token found in roamingSettings." });
     }
 
-    // Second pass: user clicked "Send Anyway" to confirm filing
+    // Second pass: user clicked "Send Anyway" — get item ID now and file it
     const pending = getPending();
     if (pending) {
-      moveAfterSend(token, itemId, pending.folderId);
+      const itemId = await getItemIdAsync(item).catch(() => null);
+      if (itemId) moveAfterSend(token, itemId, pending.folderId);
       clearPending();
       return event.completed({ allowEvent: true });
     }
 
-    // First pass: find matching folder
+    // First pass: find matching folder (uses cached folders after first call)
     let folders;
     try {
       folders = await getCaseFolders(token);
@@ -47,17 +46,11 @@ async function onMessageSend(event) {
       return event.completed({ allowEvent: false, errorMessage: "DEBUG: getCaseFolders failed: " + e.message });
     }
 
-    const match = matchFolder(
-      {
-        subject,
-        participantText: recipients.map(r => `${r.displayName} ${r.emailAddress}`).join(" "),
-        bodyText: body,
-      },
-      folders
-    );
+    const participantText = recipients.map(r => `${r.displayName} ${r.emailAddress}`).join(" ");
+    const match = matchFolder({ subject, participantText, bodyText: "" }, folders);
 
     if (!match) {
-      return event.completed({ allowEvent: false, errorMessage: `DEBUG: No folder match. Subject="${subject}", ${folders.length} folders checked.` });
+      return event.completed({ allowEvent: false, errorMessage: `DEBUG: No match. Subject="${subject}", ${folders.length} folders: ${folders.map(f=>f.displayName).join(",")}` });
     }
 
     setPending({ folderId: match.id, folderName: match.displayName });
@@ -133,16 +126,22 @@ async function graphPost(token, url, body) {
   return resp.json();
 }
 
+let _folderCache = null;
+let _folderCacheTs = 0;
+
 async function getCaseFolders(token) {
+  if (_folderCache && Date.now() - _folderCacheTs < 5 * 60 * 1000) return _folderCache;
   const top = await graphGet(token, `${GRAPH_BASE}/me/mailFolders?$top=100`);
   const casesFolder = top.value.find(f => f.displayName === "__Cases");
   if (!casesFolder) throw new Error("__Cases folder not found");
   const children = await graphGet(token, `${GRAPH_BASE}/me/mailFolders/${casesFolder.id}/childFolders?$top=100`);
-  return children.value.map(f => ({
+  _folderCache = children.value.map(f => ({
     displayName: f.displayName,
     id: f.id,
     keywords: f.displayName.split("/").map(k => k.trim().toLowerCase()),
   }));
+  _folderCacheTs = Date.now();
+  return _folderCache;
 }
 
 async function moveMessage(token, internetMessageId, folderId) {
