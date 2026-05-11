@@ -4,18 +4,14 @@
   <meta charset="UTF-8"/>
   <title>HMF Email Filer Setup</title>
   <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
-  <script>var SETUP_VERSION = "v13";</script>
-  <script src="setup.js?v=13"></script>
+  <script>var SETUP_VERSION = "v15";</script>
+  <script src="setup.js?v=15"></script>
   <style>
     body { font-family: 'Segoe UI', sans-serif; padding: 24px; color: #1a1a1a; margin: 0; }
     h2 { font-size: 16px; margin: 0 0 16px; }
     #status { font-size: 13px; margin-bottom: 16px; padding: 8px 12px; border-radius: 4px; background: #f3f3f3; }
-    #pending { display:none; margin-bottom: 16px; padding: 12px; border-radius: 4px; background: #fff4ce; border: 1px solid #f0c000; }
-    #pendingMsg { font-size: 13px; margin-bottom: 10px; font-weight: 600; }
     button { padding: 8px 20px; background: #0078d4; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; }
     button:disabled { background: #aaa; cursor: default; }
-    #confirmBtn { background: #107c10; margin-right: 8px; }
-    #cancelBtn { background: #a80000; }
     #refreshBtn { display:none; margin-left: 8px; background: #555; }
     #ver { margin-top: 16px; font-size: 11px; color: #999; }
   </style>
@@ -23,11 +19,6 @@
 <body>
   <h2>HMF Email Filer</h2>
   <div id="status">Checking status...</div>
-  <div id="pending">
-    <div id="pendingMsg"></div>
-    <button id="confirmBtn">Confirm Filing</button>
-    <button id="cancelBtn">Cancel</button>
-  </div>
   <button id="connectBtn">Connect to Microsoft</button>
   <button id="refreshBtn">Refresh Folders</button>
   <div id="ver"></div>

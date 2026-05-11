@@ -1,7 +1,6 @@
 "use strict";
 
 var USER_DOMAIN = "hmflaw.com";
-var GRAPH_BASE = "https://graph.microsoft.com/v1.0";
 
 Office.onReady();
 
@@ -32,15 +31,19 @@ function onMessageSend(event) {
               return event.completed({ allowEvent: true });
             }
 
-            var token = getAccessToken();
-            if (!token) {
+            if (!Office.context.roamingSettings.get("access_token")) {
               return event.completed({ allowEvent: true });
             }
 
-            var folders;
-            try { folders = getCaseFolders(); } catch(e) {
-              return event.completed({ allowEvent: true });
-            }
+            var stored = Office.context.roamingSettings.get("case_folders");
+            if (!stored) { return event.completed({ allowEvent: true }); }
+
+            var folders = JSON.parse(stored).map(function(f) {
+              return {
+                displayName: f.displayName, id: f.id,
+                keywords: f.displayName.split("/").map(function(k) { return k.trim().toLowerCase(); }),
+              };
+            });
 
             var participantText = recipients.map(function(r) {
               return r.displayName + " " + r.emailAddress;
@@ -48,115 +51,22 @@ function onMessageSend(event) {
 
             var match = matchFolder({ subject: subject, participantText: participantText }, folders);
 
-            if (!match) {
-              return event.completed({ allowEvent: true });
+            if (match) {
+              var pending = { folderId: match.id, folderName: match.displayName, subject: subject, ts: Date.now() };
+              Office.context.roamingSettings.set("pending_filing", JSON.stringify(pending));
+              Office.context.roamingSettings.saveAsync(function() {});
             }
 
-            // Second send: pending already set for this folder → file and send
-            var pendingJson = Office.context.roamingSettings.get("pending_filing");
-            if (pendingJson) {
-              try {
-                var pending = JSON.parse(pendingJson);
-                if (pending.folderId === match.id && Date.now() - pending.ts < 300000) {
-                  Office.context.roamingSettings.remove("pending_filing");
-                  Office.context.roamingSettings.saveAsync(function() {});
-                  moveAfterSend(token, subject, match.id);
-                  return event.completed({ allowEvent: true });
-                }
-              } catch(e) {}
-            }
-
-            // First send: prompt and block
-            var pending = { folderId: match.id, folderName: match.displayName, subject: subject, ts: Date.now() };
-            Office.context.roamingSettings.set("pending_filing", JSON.stringify(pending));
-            Office.context.roamingSettings.saveAsync(function() {});
-
-            event.completed({
-              allowEvent: false,
-              errorMessage: "File to \"" + match.displayName + "\"? Close this dialog to confirm (or click Send again on desktop).",
-            });
-
-          } catch(e) {
             event.completed({ allowEvent: true });
-          }
+
+          } catch(e) { event.completed({ allowEvent: true }); }
         });
-      } catch(e) {
-        event.completed({ allowEvent: true });
-      }
+      } catch(e) { event.completed({ allowEvent: true }); }
     });
-  } catch(e) {
-    event.completed({ allowEvent: true });
-  }
+  } catch(e) { event.completed({ allowEvent: true }); }
 }
 
 Office.actions.associate("onMessageSend", onMessageSend);
-
-function getAccessToken() {
-  return Office.context.roamingSettings.get("access_token") || null;
-}
-
-function getCaseFolders() {
-  var stored = Office.context.roamingSettings.get("case_folders");
-  if (!stored) throw new Error("No folders cached.");
-  return JSON.parse(stored).map(function(f) {
-    return {
-      displayName: f.displayName,
-      id: f.id,
-      keywords: f.displayName.split("/").map(function(k) { return k.trim().toLowerCase(); }),
-    };
-  });
-}
-
-function moveAfterSend(token, subject, folderId) {
-  var sentAfter = new Date(Date.now() - 15000).toISOString();
-  var safeSubject = subject.replace(/'/g, "''");
-  var attempt = 0;
-
-  function tryMove() {
-    var filter = encodeURIComponent("subject eq '" + safeSubject + "' and sentDateTime ge " + sentAfter);
-    graphGet(token,
-      GRAPH_BASE + "/me/mailFolders/SentItems/messages?$filter=" + filter + "&$orderby=sentDateTime desc&$select=id&$top=1",
-      function(data) {
-        var msgId = data && data.value && data.value[0] && data.value[0].id;
-        if (msgId) {
-          graphPost(token, GRAPH_BASE + "/me/messages/" + msgId + "/move", { destinationId: folderId }, function() {});
-        } else if (attempt < 5) {
-          attempt++;
-          setTimeout(tryMove, 2000);
-        }
-      },
-      function() { if (attempt < 5) { attempt++; setTimeout(tryMove, 2000); } }
-    );
-  }
-  setTimeout(tryMove, 2000);
-}
-
-function graphGet(token, url, onSuccess, onError) {
-  var xhr = new XMLHttpRequest();
-  xhr.open("GET", url);
-  xhr.setRequestHeader("Authorization", "Bearer " + token);
-  xhr.onload = function() {
-    if (xhr.status >= 200 && xhr.status < 300) {
-      try { onSuccess(JSON.parse(xhr.responseText)); } catch(e) { if (onError) onError(e); }
-    } else { if (onError) onError(new Error("Graph " + xhr.status)); }
-  };
-  xhr.onerror = function() { if (onError) onError(new Error("Network error")); };
-  xhr.send();
-}
-
-function graphPost(token, url, body, onSuccess, onError) {
-  var xhr = new XMLHttpRequest();
-  xhr.open("POST", url);
-  xhr.setRequestHeader("Authorization", "Bearer " + token);
-  xhr.setRequestHeader("Content-Type", "application/json");
-  xhr.onload = function() {
-    if (xhr.status >= 200 && xhr.status < 300) {
-      try { if (onSuccess) onSuccess(JSON.parse(xhr.responseText)); } catch(e) {}
-    } else { if (onError) onError(new Error("Graph " + xhr.status)); }
-  };
-  xhr.onerror = function() { if (onError) onError(new Error("Network error")); };
-  xhr.send(JSON.stringify(body));
-}
 
 var CALENDAR_PREFIXES = ["accepted:", "declined:", "tentative:", "cancelled:", "meeting request:"];
 
