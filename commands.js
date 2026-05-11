@@ -131,11 +131,10 @@ let _folderCacheTs = 0;
 
 async function getCaseFolders(token) {
   if (_folderCache && Date.now() - _folderCacheTs < 5 * 60 * 1000) return _folderCache;
-  const top = await graphGet(token, `${GRAPH_BASE}/me/mailFolders?$top=100`);
-  const casesFolder = top.value.find(f => f.displayName === "__Cases");
+  const res = await graphGet(token, `${GRAPH_BASE}/me/mailFolders?$top=100&$expand=childFolders($top=100)`);
+  const casesFolder = res.value.find(f => f.displayName === "__Cases");
   if (!casesFolder) throw new Error("__Cases folder not found");
-  const children = await graphGet(token, `${GRAPH_BASE}/me/mailFolders/${casesFolder.id}/childFolders?$top=100`);
-  _folderCache = children.value.map(f => ({
+  _folderCache = (casesFolder.childFolders || []).map(f => ({
     displayName: f.displayName,
     id: f.id,
     keywords: f.displayName.split("/").map(k => k.trim().toLowerCase()),
@@ -143,6 +142,14 @@ async function getCaseFolders(token) {
   _folderCacheTs = Date.now();
   return _folderCache;
 }
+
+// Pre-warm folder cache on runtime startup so first send doesn't pay the Graph cost
+(async () => {
+  try {
+    const token = await getAccessToken();
+    if (token) await getCaseFolders(token);
+  } catch (_) {}
+})();
 
 async function moveMessage(token, internetMessageId, folderId) {
   const findMsg = async () => {
