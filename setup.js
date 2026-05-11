@@ -342,7 +342,7 @@ async function processUnfiled() {
 
     const msgsRes = await fetch(
       `${GRAPH_BASE}/me/mailFolders/${sentUnfiledId}/messages` +
-      `?$select=id,subject,toRecipients,sentDateTime,from&$top=50&$orderby=sentDateTime asc`,
+      `?$select=id,subject,toRecipients,ccRecipients,sentDateTime,from&$top=50&$orderby=sentDateTime asc`,
       { headers: { Authorization: "Bearer " + token } }
     );
     if (!msgsRes.ok) throw new Error("Graph " + msgsRes.status);
@@ -366,8 +366,9 @@ async function processUnfiled() {
         continue;
       }
 
-      const emails = (msg.toRecipients || []).map(r => r.emailAddress.address);
-      const participantText = (msg.toRecipients || []).map(r =>
+      const allRecipients = [...(msg.toRecipients || []), ...(msg.ccRecipients || [])];
+      const emails = allRecipients.map(r => r.emailAddress.address);
+      const participantText = allRecipients.map(r =>
         r.emailAddress.name + " " + r.emailAddress.address
       ).join(" ");
 
