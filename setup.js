@@ -157,7 +157,7 @@ function initEmailCard(entries) {
     body: e.body !== undefined ? e.body : null
   }));
   _emailIndex = 0;
-  document.getElementById("email-card").style.display = "";
+  document.getElementById("email-card").style.display = "block";
   showEmailAt(0);
 }
 
