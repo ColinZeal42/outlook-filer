@@ -4,8 +4,8 @@
   <meta charset="UTF-8"/>
   <title>HMF Email Filer Setup</title>
   <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
-  <script>var SETUP_VERSION = "v20";</script>
-  <script src="setup.js?v=20"></script>
+  <script>var SETUP_VERSION = "v21";</script>
+  <script src="setup.js?v=21"></script>
   <style>
     body { font-family: 'Segoe UI', sans-serif; padding: 20px; color: #1a1a1a; margin: 0; }
     h2 { font-size: 16px; margin: 0 0 14px; }
@@ -16,6 +16,7 @@
     #refreshBtn { display: none; margin-left: 6px; background: #555; }
     #processBtn { display: none; margin-top: 12px; background: #107c10; }
     #fileSelectedBtn { display: none; margin-top: 6px; margin-left: 6px; background: #8764b8; }
+    #fileInboxBtn { display: none; margin-top: 6px; margin-left: 6px; background: #c43e1c; }
     #queue-status { font-size: 14px; margin-top: 12px; color: #555; min-height: 20px; }
     #queue { margin-top: 8px; }
     .queue-row { display: flex; align-items: center; gap: 6px; padding: 7px 0; border-bottom: 1px solid #eee; font-size: 14px; }
@@ -38,6 +39,7 @@
   <br/>
   <button id="processBtn" class="btn">File Unsent Emails</button>
   <button id="fileSelectedBtn" class="btn">File This Email</button>
+  <button id="fileInboxBtn" class="btn">File Inbox</button>
   <div id="queue-status"></div>
   <div id="queue"></div>
   <div id="ver"></div>

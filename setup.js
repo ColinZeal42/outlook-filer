@@ -11,6 +11,7 @@ Office.onReady(async () => {
   document.getElementById("refreshBtn").addEventListener("click", refreshFolders);
   document.getElementById("processBtn").addEventListener("click", processUnfiled);
   document.getElementById("fileSelectedBtn").addEventListener("click", fileSelected);
+  document.getElementById("fileInboxBtn").addEventListener("click", fileInbox);
   document.getElementById("ver").textContent = typeof SETUP_VERSION !== "undefined" ? SETUP_VERSION : "?";
 
   const params = new URLSearchParams(window.location.search);
@@ -28,6 +29,8 @@ Office.onReady(async () => {
       processUnfiled();
     } else if (mode === "selected") {
       fileSelected();
+    } else if (mode === "inbox") {
+      fileInbox();
     }
   }
 });
@@ -43,6 +46,7 @@ function checkStatus() {
   const refreshBtn = document.getElementById("refreshBtn");
   const processBtn = document.getElementById("processBtn");
   const fileSelectedBtn = document.getElementById("fileSelectedBtn");
+  const fileInboxBtn = document.getElementById("fileInboxBtn");
 
   if (refreshToken) {
     if (Date.now() < expiry) {
@@ -55,12 +59,14 @@ function checkStatus() {
     refreshBtn.style.display = "inline-block";
     processBtn.style.display = "inline-block";
     fileSelectedBtn.style.display = "inline-block";
+    fileInboxBtn.style.display = "inline-block";
   } else {
     statusEl.textContent = "Not connected. Click Connect to sign in.";
     statusEl.style.color = "#555";
     refreshBtn.style.display = "none";
     processBtn.style.display = "none";
     fileSelectedBtn.style.display = "none";
+    fileInboxBtn.style.display = "none";
   }
 }
 
@@ -233,7 +239,7 @@ async function processUnfiled() {
   btn.disabled = false;
 }
 
-// --- File Selected (multi-select via getSelectedItemsAsync, Mailbox 1.13) ---
+// --- File Selected (currently open email in reading pane) ---
 
 function fileSelected() {
   const btn = document.getElementById("fileSelectedBtn");
@@ -242,7 +248,6 @@ function fileSelected() {
 
   btn.disabled = true;
   queueEl.innerHTML = "";
-  statusEl.textContent = "Reading selected emails...";
 
   const token = Office.context.roamingSettings.get("access_token");
   if (!token) { statusEl.textContent = "Not connected."; btn.disabled = false; return; }
@@ -254,73 +259,102 @@ function fileSelected() {
     return;
   }
 
-  if (!Office.context.requirements.isSetSupported("Mailbox", "1.13")) {
-    statusEl.textContent = "Multi-select requires a newer version of Outlook.";
+  const item = Office.context.mailbox.item;
+  if (!item) {
+    statusEl.textContent = "No email is currently open.";
     btn.disabled = false;
     return;
   }
 
-  Office.context.mailbox.getSelectedItemsAsync(async function(asyncResult) {
-    try {
-      if (asyncResult.status !== Office.AsyncResultStatus.Succeeded) {
-        statusEl.textContent = "Could not read selected emails: " + asyncResult.error.message;
-        btn.disabled = false;
-        return;
-      }
+  const subject = item.subject || "";
+  const recipients = item.to || [];
+  const emails = recipients.map(r => r.emailAddress);
+  const participantText = recipients.map(r => r.displayName + " " + r.emailAddress).join(" ");
 
-      const items = asyncResult.value || [];
-      if (items.length === 0) {
-        statusEl.textContent = "No emails selected. Select emails in the message list first.";
-        btn.disabled = false;
-        return;
-      }
+  const folders = parseFolders(foldersJson);
+  const match = matchFolder({ subject, participantText }, folders);
 
-      statusEl.textContent = `Reading ${items.length} selected email${items.length !== 1 ? "s" : ""}...`;
-
-      // Convert EWS IDs to REST IDs
-      const restIds = await Promise.all(items.map(item => new Promise(resolve => {
-        Office.context.mailbox.convertToRestId(
-          item.itemId,
-          Office.MailboxEnums.RestVersion.v2_0,
-          restId => resolve({ restId, subject: item.subject || "" })
-        );
-      })));
-
-      // Fetch toRecipients for each message for accurate folder matching
-      const messages = (await Promise.all(
-        restIds.map(({ restId, subject }) =>
-          fetch(`${GRAPH_BASE}/me/messages/${restId}?$select=id,subject,toRecipients`, {
-            headers: { Authorization: "Bearer " + token }
-          }).then(r => r.ok ? r.json() : { id: restId, subject, toRecipients: [] })
-           .catch(() => ({ id: restId, subject, toRecipients: [] }))
-        )
-      ));
-
-      const folders = parseFolders(foldersJson);
-      let matchCount = 0;
-
-      for (const msg of messages) {
-        const emails = (msg.toRecipients || []).map(r => r.emailAddress.address);
-        const participantText = (msg.toRecipients || []).map(r =>
-          r.emailAddress.name + " " + r.emailAddress.address
-        ).join(" ");
-
-        if (isCalendarMessage(msg.subject || "")) continue;
-
-        const match = matchFolder({ subject: msg.subject || "", participantText }, folders);
-        if (renderQueueRow(queueEl, token, msg, match)) matchCount++;
-      }
-
-      if (queueEl.children.length === 0) {
-        statusEl.textContent = `No case folder matches found in ${messages.length} selected email${messages.length !== 1 ? "s" : ""}.`;
-      } else {
-        statusEl.textContent = `${matchCount} email${matchCount !== 1 ? "s" : ""} to review:`;
-      }
-    } catch(e) {
-      statusEl.textContent = "Error: " + e.message;
-    }
+  if (!match) {
+    statusEl.textContent = "No matching case folder found for this email.";
     btn.disabled = false;
-  });
+    return;
+  }
+
+  Office.context.mailbox.convertToRestId(
+    item.itemId,
+    Office.MailboxEnums.RestVersion.v2_0,
+    function(restId) {
+      renderQueueRow(queueEl, token, { id: restId, subject }, match);
+      statusEl.textContent = "1 email to review:";
+      btn.disabled = false;
+    }
+  );
+}
+
+// --- File Inbox ---
+
+async function fileInbox() {
+  const btn = document.getElementById("fileInboxBtn");
+  const statusEl = document.getElementById("queue-status");
+  const queueEl = document.getElementById("queue");
+
+  btn.disabled = true;
+  queueEl.innerHTML = "";
+  statusEl.textContent = "Scanning Inbox...";
+
+  const token = Office.context.roamingSettings.get("access_token");
+  if (!token) { statusEl.textContent = "Not connected."; btn.disabled = false; return; }
+
+  const foldersJson = Office.context.roamingSettings.get("case_folders");
+  if (!foldersJson) {
+    statusEl.textContent = "No case folders cached. Click Refresh Folders first.";
+    btn.disabled = false;
+    return;
+  }
+
+  try {
+    const msgsRes = await fetch(
+      `${GRAPH_BASE}/me/mailFolders/Inbox/messages` +
+      `?$select=id,subject,from,toRecipients&$top=50&$orderby=receivedDateTime desc`,
+      { headers: { Authorization: "Bearer " + token } }
+    );
+    if (!msgsRes.ok) throw new Error("Graph " + msgsRes.status);
+    const messages = (await msgsRes.json()).value || [];
+
+    if (messages.length === 0) {
+      statusEl.textContent = "Inbox is empty.";
+      btn.disabled = false;
+      return;
+    }
+
+    const folders = parseFolders(foldersJson);
+    let matchCount = 0;
+
+    for (const msg of messages) {
+      if (isCalendarMessage(msg.subject || "")) continue;
+
+      // For incoming email, match against sender + subject
+      const fromName = msg.from && msg.from.emailAddress ? msg.from.emailAddress.name || "" : "";
+      const fromAddr = msg.from && msg.from.emailAddress ? msg.from.emailAddress.address || "" : "";
+      const participantText = fromName + " " + fromAddr;
+
+      const match = matchFolder({ subject: msg.subject || "", participantText }, folders);
+      if (!match) continue; // Non-matches stay in inbox untouched
+
+      renderQueueRow(queueEl, token, msg, match);
+      matchCount++;
+    }
+
+    if (matchCount === 0) {
+      statusEl.textContent = "No case folder matches found in Inbox.";
+    } else {
+      statusEl.textContent = `${matchCount} email${matchCount !== 1 ? "s" : ""} to review:`;
+    }
+  } catch(e) {
+    statusEl.textContent = "Error: " + e.message;
+  }
+
+  btn.disabled = false;
 }
 
 // --- Folder refresh ---
@@ -397,6 +431,7 @@ function signIn() {
                 _pendingMode = null;
                 if (pendingMode === "unsent") processUnfiled();
                 else if (pendingMode === "selected") fileSelected();
+                else if (pendingMode === "inbox") fileInbox();
               }
             } else {
               statusEl.textContent = "Error saving: " + r.error.message;
