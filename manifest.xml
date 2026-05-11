@@ -7,7 +7,7 @@
   xsi:type="MailApp">
 
   <Id>c41a2c93-abb6-4276-8f11-a47e71353c65</Id>
-  <Version>3.0.1.7</Version>
+  <Version>3.0.1.8</Version>
   <ProviderName>HMF</ProviderName>
   <DefaultLocale>en-US</DefaultLocale>
   <DisplayName DefaultValue="HMF Email Filer"/>
@@ -104,7 +104,7 @@
           <bt:Image id="Icon80" DefaultValue="https://ColinZeal42.github.io/outlook-filer/assets/icon-128.png"/>
         </bt:Images>
         <bt:Urls>
-          <bt:Url id="Commands.Html" DefaultValue="https://ColinZeal42.github.io/outlook-filer/commands.html?v=17"/>
+          <bt:Url id="Commands.Html" DefaultValue="https://ColinZeal42.github.io/outlook-filer/commands.html?v=18"/>
           <bt:Url id="Setup.Html" DefaultValue="https://ColinZeal42.github.io/outlook-filer/setup.html?v=15"/>
         </bt:Urls>
         <bt:ShortStrings>

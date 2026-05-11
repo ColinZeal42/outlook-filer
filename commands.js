@@ -2,9 +2,11 @@
 
 var USER_DOMAIN = "hmflaw.com";
 var GRAPH_BASE = "https://graph.microsoft.com/v1.0";
-var CONFIRM_URL = "https://ColinZeal42.github.io/outlook-filer/confirm.html";
 
 Office.onReady();
+
+// Persists between sends because Commands runtime has lifetime="long"
+var _pending = null;
 
 function onMessageSend(event) {
   try {
@@ -52,15 +54,24 @@ function onMessageSend(event) {
 
             var match = matchFolder({ subject: subject, participantText: participantText }, folders);
 
-            // Allow send first, then prompt
-            event.completed({ allowEvent: true });
-
-            if (match) {
-              var sentTs = Date.now();
-              setTimeout(function() {
-                promptAndMove(token, subject, sentTs, match);
-              }, 10000);
+            if (!match) {
+              return event.completed({ allowEvent: true });
             }
+
+            // Second send: confirmed — file it and allow
+            if (_pending && _pending.folderId === match.id && Date.now() - _pending.ts < 300000) {
+              var sentTs = Date.now();
+              _pending = null;
+              moveAfterSend(token, subject, sentTs, match.id);
+              return event.completed({ allowEvent: true });
+            }
+
+            // First send: prompt via SoftBlock
+            _pending = { folderId: match.id, folderName: match.displayName, ts: Date.now() };
+            event.completed({
+              allowEvent: false,
+              errorMessage: "File to “" + match.displayName + "”? Click Don’t Send, then click Send again to confirm. (In OWA, close this dialog with ✕.)",
+            });
 
           } catch(e) { event.completed({ allowEvent: true }); }
         });
@@ -70,26 +81,6 @@ function onMessageSend(event) {
 }
 
 Office.actions.associate("onMessageSend", onMessageSend);
-
-function promptAndMove(token, subject, sentTs, match) {
-  var url = CONFIRM_URL +
-    "?folder=" + encodeURIComponent(match.displayName) +
-    "&subject=" + encodeURIComponent(subject.slice(0, 60));
-
-  Office.context.ui.displayDialogAsync(url, { height: 25, width: 35, displayInIframe: false },
-    function(result) {
-      if (result.status !== Office.AsyncResultStatus.Succeeded) return;
-      var dlg = result.value;
-      dlg.addEventHandler(Office.EventType.DialogMessageReceived, function(args) {
-        dlg.close();
-        if (args.message === "yes") {
-          moveAfterSend(token, subject, sentTs, match.id);
-        }
-      });
-      dlg.addEventHandler(Office.EventType.DialogEventReceived, function() {});
-    }
-  );
-}
 
 function moveAfterSend(token, subject, sentTs, folderId) {
   var sentAfter = new Date(sentTs - 15000).toISOString();
