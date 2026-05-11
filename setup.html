@@ -4,28 +4,30 @@
   <meta charset="UTF-8"/>
   <title>HMF Email Filer Setup</title>
   <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
-  <script>var SETUP_VERSION = "v16";</script>
-  <script src="setup.js?v=16"></script>
+  <script>var SETUP_VERSION = "v17";</script>
+  <script src="setup.js?v=17"></script>
   <style>
-    body { font-family: 'Segoe UI', sans-serif; padding: 24px; color: #1a1a1a; margin: 0; }
-    h2 { font-size: 16px; margin: 0 0 16px; }
-    #status { font-size: 13px; margin-bottom: 16px; padding: 8px 12px; border-radius: 4px; background: #f3f3f3; }
-    .btn { padding: 8px 20px; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; }
+    body { font-family: 'Segoe UI', sans-serif; padding: 20px; color: #1a1a1a; margin: 0; }
+    h2 { font-size: 16px; margin: 0 0 14px; }
+    #status { font-size: 13px; margin-bottom: 14px; padding: 8px 12px; border-radius: 4px; background: #f3f3f3; }
+    .btn { padding: 7px 16px; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }
     .btn:disabled { background: #aaa; cursor: default; }
     #connectBtn { background: #0078d4; }
-    #refreshBtn { display: none; margin-left: 8px; background: #555; }
-    #processBtn { display: none; margin-top: 14px; background: #107c10; width: 100%; box-sizing: border-box; }
-    #queue-status { font-size: 13px; margin-top: 10px; color: #555; min-height: 18px; }
-    #queue { margin-top: 6px; }
-    .queue-row { display: flex; align-items: center; gap: 6px; padding: 6px 0; border-bottom: 1px solid #eee; font-size: 12px; }
-    .queue-row.done { opacity: 0.45; }
+    #refreshBtn { display: none; margin-left: 6px; background: #555; }
+    #processBtn { display: none; margin-top: 12px; background: #107c10; }
+    #fileSelectedBtn { display: none; margin-top: 6px; margin-left: 6px; background: #8764b8; }
+    #queue-status { font-size: 14px; margin-top: 12px; color: #555; min-height: 20px; }
+    #queue { margin-top: 8px; }
+    .queue-row { display: flex; align-items: center; gap: 6px; padding: 7px 0; border-bottom: 1px solid #eee; font-size: 14px; }
+    .queue-row.done { opacity: 0.4; }
     .queue-subject { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .queue-arrow { color: #aaa; flex-shrink: 0; }
-    .queue-folder { color: #0078d4; flex-shrink: 0; max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
-    .file-btn { flex-shrink: 0; padding: 3px 9px; background: #107c10; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 11px; }
-    .skip-btn { flex-shrink: 0; padding: 3px 9px; background: #605e5c; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 11px; }
+    .queue-folder { color: #0078d4; flex-shrink: 0; max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+    .queue-no-match { color: #aaa; flex-shrink: 0; font-style: italic; font-size: 13px; }
+    .file-btn { flex-shrink: 0; padding: 4px 10px; background: #107c10; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 13px; }
+    .skip-btn { flex-shrink: 0; padding: 4px 10px; background: #605e5c; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 13px; }
     .file-btn:disabled, .skip-btn:disabled { background: #bbb; cursor: default; }
-    #ver { margin-top: 20px; font-size: 11px; color: #999; }
+    #ver { margin-top: 20px; font-size: 11px; color: #bbb; }
   </style>
 </head>
 <body>
@@ -33,7 +35,9 @@
   <div id="status">Checking status...</div>
   <button id="connectBtn" class="btn">Connect to Microsoft</button>
   <button id="refreshBtn" class="btn">Refresh Folders</button>
-  <button id="processBtn" class="btn">Process Unfiled Emails</button>
+  <br/>
+  <button id="processBtn" class="btn">File Unsent Emails</button>
+  <button id="fileSelectedBtn" class="btn">File Selected</button>
   <div id="queue-status"></div>
   <div id="queue"></div>
   <div id="ver"></div>
