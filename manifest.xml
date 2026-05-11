@@ -7,7 +7,7 @@
   xsi:type="MailApp">
 
   <Id>c41a2c93-abb6-4276-8f11-a47e71353c65</Id>
-  <Version>3.0.0.0</Version>
+  <Version>3.0.0.1</Version>
   <ProviderName>HMF</ProviderName>
   <DefaultLocale>en-US</DefaultLocale>
   <DisplayName DefaultValue="HMF Email Filer"/>
@@ -57,6 +57,7 @@
       <Hosts>
         <Host xsi:type="MailHost">
           <Runtimes>
+            <Runtime resid="Setup.Html" lifetime="long"/>
             <Runtime resid="Commands.Html" lifetime="short"/>
           </Runtimes>
           <DesktopFormFactor>
@@ -64,9 +65,9 @@
 
             <ExtensionPoint xsi:type="MessageReadCommandSurface">
               <OfficeTab id="TabDefault">
-                <Group id="hmf.Group">
+                <Group id="hmfGroup">
                   <Label resid="AddInName"/>
-                  <Control xsi:type="Button" id="hmf.SetupButton">
+                  <Control xsi:type="Button" id="hmfSetupButton">
                     <Label resid="SetupLabel"/>
                     <Supertip>
                       <Title resid="SetupLabel"/>
