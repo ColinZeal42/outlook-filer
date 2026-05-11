@@ -434,14 +434,14 @@ async function fileSelected() {
   statusEl.textContent = "Loading…";
 
   const subject = item.subject || "";
-  const recipients = item.to || [];
-  const emails = recipients.map(r => r.emailAddress);
-  const participantText = recipients.map(r => r.displayName + " " + r.emailAddress).join(" ");
+  const allRecipients = [...(item.to || []), ...(item.cc || [])];
+  const emails = allRecipients.map(r => r.emailAddress);
+  const participantText = allRecipients.map(r => r.displayName + " " + r.emailAddress).join(" ");
 
   const folders = parseFolders(foldersJson);
   const match = matchFolder({ subject, participantText }, folders);
 
-  const toNames = recipients.map(r => r.displayName || r.emailAddress).join(", ");
+  const toNames = (item.to || []).map(r => r.displayName || r.emailAddress).join(", ");
   const dateStr = item.dateTimeCreated ? formatDate(item.dateTimeCreated.toISOString()) : "";
 
   try {
