@@ -4,35 +4,20 @@ const AUTH_URL = "https://ColinZeal42.github.io/outlook-filer/auth.html";
 const GRAPH_BASE = "https://graph.microsoft.com/v1.0";
 const USER_DOMAIN = "hmflaw.com";
 
-let _pendingMode = null;
-let _threadGroups = [];
-let _threadFolders = [];
-let _mode = "inbox"; // "inbox" | "sent"
-
 Office.onReady(async () => {
   document.getElementById("connectBtn").addEventListener("click", signIn);
   document.getElementById("refreshBtn").addEventListener("click", refreshFolders);
-  document.getElementById("processBtn").addEventListener("click", () => openDialog("sent"));
   document.getElementById("setBaselineBtn").addEventListener("click", setBaseline);
-  document.getElementById("fileInboxBtn").addEventListener("click", () => openDialog("inbox"));
   document.getElementById("ver").textContent = typeof SETUP_VERSION !== "undefined" ? SETUP_VERSION : "?";
 
-  const mode = (typeof window.SETUP_MODE !== "undefined" ? window.SETUP_MODE : null)
-    || new URLSearchParams(window.location.search).get("mode");
-
-  checkStatus();
+  await checkStatus();
 
   const token = Office.context.roamingSettings.get("access_token");
-  if (mode) {
-    if (!token) {
-      _pendingMode = mode;
-      document.getElementById("queue-status").textContent = "Connecting to Microsoft...";
-      signIn();
-    } else if (mode === "sent") {
-      openDialog("sent");
-    } else if (mode === "inbox") {
-      openDialog("inbox");
-    }
+  if (token) populateFolderPicker();
+
+  const mode = new URLSearchParams(window.location.search).get("mode");
+  if (mode === "sent" || mode === "inbox") {
+    setTimeout(() => openDialog(mode), 300);
   }
 });
 
@@ -79,44 +64,292 @@ async function ensureFreshToken() {
 async function checkStatus() {
   const refreshToken = Office.context.roamingSettings.get("refresh_token");
   const expiry = parseInt(Office.context.roamingSettings.get("token_expiry") || "0");
-  const foldersJson = Office.context.roamingSettings.get("case_folders");
-  const folderCount = foldersJson ? JSON.parse(foldersJson).length : 0;
-  const statusEl = document.getElementById("status");
+  const accountEl = document.getElementById("account-status");
   const connectBtn = document.getElementById("connectBtn");
-  const refreshBtn = document.getElementById("refreshBtn");
-  const processBtn = document.getElementById("processBtn");
-  const fileInboxBtn = document.getElementById("fileInboxBtn");
 
   if (refreshToken && Date.now() < expiry) {
-    statusEl.innerHTML = `Connected. ${folderCount} case folder${folderCount !== 1 ? "s" : ""} cached. <button onclick="refreshFolders()" title="Refresh folders" style="background:none;border:none;cursor:pointer;font-size:13px;padding:0;color:green;vertical-align:middle;">↻</button>`;
-    statusEl.style.color = "green";
+    accountEl.textContent = "Connected";
+    accountEl.style.color = "green";
     connectBtn.style.display = "none";
-    refreshBtn.style.display = "none";
-    processBtn.style.display = "inline-block";
-    fileInboxBtn.style.display = "inline-block";
+    renderFolderSection();
+    renderBaselineSection();
+    renderBehaviorSection();
   } else if (refreshToken) {
-    statusEl.textContent = "Refreshing session…";
-    statusEl.style.color = "#555";
+    accountEl.textContent = "Refreshing session…";
+    accountEl.style.color = "#555";
     connectBtn.style.display = "none";
-    refreshBtn.style.display = "none";
-    processBtn.style.display = "none";
-    fileInboxBtn.style.display = "none";
     const ok = await refreshAccessToken();
     if (ok) {
       checkStatus();
     } else {
-      statusEl.textContent = "Session expired. Click Connect to sign in.";
-      statusEl.style.color = "darkorange";
+      accountEl.textContent = "Session expired — reconnect to continue";
+      accountEl.style.color = "darkorange";
       connectBtn.style.display = "inline-block";
     }
   } else {
-    statusEl.textContent = "Not connected. Click Connect to sign in.";
-    statusEl.style.color = "#555";
+    accountEl.textContent = "Not connected";
+    accountEl.style.color = "#555";
     connectBtn.style.display = "inline-block";
-    refreshBtn.style.display = "none";
-    processBtn.style.display = "none";
-    fileInboxBtn.style.display = "none";
+    renderBaselineSection();
+    renderBehaviorSection();
   }
+}
+
+function renderFolderSection() {
+  const foldersJson = Office.context.roamingSettings.get("case_folders");
+  const count = foldersJson ? JSON.parse(foldersJson).length : 0;
+  document.getElementById("folder-count").textContent =
+    count ? `${count} case folder${count !== 1 ? "s" : ""} cached` : "No folders cached — select a root folder and refresh";
+}
+
+function renderBaselineSection() {
+  const lastRun = Office.context.roamingSettings.get("sent_last_run");
+  document.getElementById("baseline-status").textContent = lastRun
+    ? "Sent emails filed through: " + new Date(lastRun).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+    : "No baseline set";
+}
+
+function renderBehaviorSection() {
+  populateSortPicker();
+}
+
+// --- Folder picker ---
+
+async function fetchRootFolders(token) {
+  const res = await fetch(
+    `${GRAPH_BASE}/me/mailFolders?$top=100&$expand=childFolders($top=100)`,
+    { headers: { Authorization: "Bearer " + token } }
+  );
+  if (!res.ok) throw new Error("Graph " + res.status);
+  const data = await res.json();
+  const folders = [];
+  for (const f of data.value) {
+    folders.push({ id: f.id, displayName: f.displayName, depth: 0 });
+    for (const c of (f.childFolders || [])) {
+      folders.push({ id: c.id, displayName: f.displayName + "/" + c.displayName, depth: 1 });
+    }
+  }
+  return folders;
+}
+
+async function populateFolderPicker() {
+  const picker = document.getElementById("rootFolderPicker");
+  const refreshBtn = document.getElementById("refreshBtn");
+  picker.innerHTML = '<option value="">Choose root folder…</option>';
+  picker.disabled = true;
+  refreshBtn.disabled = true;
+  try {
+    const token = await ensureFreshToken();
+    const folders = await fetchRootFolders(token);
+    const storedId = Office.context.roamingSettings.get("root_folder_id");
+    for (const f of folders) {
+      const opt = document.createElement("option");
+      opt.value = f.id;
+      opt.textContent = f.displayName;
+      if (f.id === storedId) opt.selected = true;
+      picker.appendChild(opt);
+    }
+    picker.disabled = false;
+    if (!storedId) {
+      const casesOpt = Array.from(picker.options).find(o => o.textContent === "__Cases" || o.textContent.endsWith("/__Cases"));
+      if (casesOpt) casesOpt.selected = true;
+    }
+    if (picker.value) refreshBtn.disabled = false;
+  } catch(e) {
+    picker.innerHTML = '<option value="">Could not load folders</option>';
+  }
+}
+
+function onRootFolderChange() {
+  const picker = document.getElementById("rootFolderPicker");
+  const folderId = picker.value;
+  const folderName = picker.options[picker.selectedIndex]?.textContent || "";
+  document.getElementById("refreshBtn").disabled = !folderId;
+  if (!folderId) return;
+  Office.context.roamingSettings.set("root_folder_id", folderId);
+  Office.context.roamingSettings.set("root_folder_name", folderName);
+  Office.context.roamingSettings.saveAsync(() => refreshFolders());
+}
+
+// --- Folder refresh ---
+
+async function fetchCaseFolders(token) {
+  let rootId = Office.context.roamingSettings.get("root_folder_id");
+
+  if (!rootId) {
+    const res = await fetch(`${GRAPH_BASE}/me/mailFolders?$top=100`, {
+      headers: { Authorization: "Bearer " + token }
+    });
+    if (!res.ok) throw new Error("Graph " + res.status);
+    const data = await res.json();
+    const casesFolder = data.value.find(f => f.displayName === "__Cases");
+    if (!casesFolder) throw new Error("No root folder selected and __Cases not found");
+    rootId = casesFolder.id;
+    Office.context.roamingSettings.set("root_folder_id", rootId);
+    Office.context.roamingSettings.set("root_folder_name", "__Cases");
+    Office.context.roamingSettings.saveAsync(() => {});
+    const picker = document.getElementById("rootFolderPicker");
+    if (picker) {
+      const opt = Array.from(picker.options).find(o => o.value === rootId);
+      if (opt) opt.selected = true;
+    }
+  }
+
+  const res = await fetch(
+    `${GRAPH_BASE}/me/mailFolders/${rootId}?$expand=childFolders($top=100)`,
+    { headers: { Authorization: "Bearer " + token } }
+  );
+  if (!res.ok) throw new Error("Graph " + res.status);
+  const data = await res.json();
+  return (data.childFolders || []).map(f => ({ displayName: f.displayName, id: f.id }));
+}
+
+async function refreshFolders() {
+  const refreshBtn = document.getElementById("refreshBtn");
+  const folderCountEl = document.getElementById("folder-count");
+  refreshBtn.disabled = true;
+  folderCountEl.textContent = "Refreshing…";
+  try {
+    const token = await ensureFreshToken();
+    const folders = await fetchCaseFolders(token);
+    Office.context.roamingSettings.set("case_folders", JSON.stringify(folders));
+    Office.context.roamingSettings.saveAsync(() => {
+      refreshBtn.disabled = false;
+      renderFolderSection();
+    });
+  } catch(e) {
+    folderCountEl.textContent = "Error: " + e.message;
+    refreshBtn.disabled = false;
+  }
+}
+
+// --- Sort picker ---
+
+function populateSortPicker() {
+  const val = Office.context.roamingSettings.get("sort_order") || "date-desc";
+  const picker = document.getElementById("sortOrderPicker");
+  if (picker) picker.value = val;
+}
+
+function onSortOrderChange() {
+  const val = document.getElementById("sortOrderPicker").value;
+  Office.context.roamingSettings.set("sort_order", val);
+  Office.context.roamingSettings.saveAsync(() => {});
+}
+
+// --- Baseline ---
+
+function setBaseline() {
+  const btn = document.getElementById("setBaselineBtn");
+  btn.disabled = true;
+  Office.context.roamingSettings.set("sent_last_run", new Date().toISOString());
+  Office.context.roamingSettings.saveAsync(() => {
+    btn.disabled = false;
+    renderBaselineSection();
+  });
+}
+
+// --- Dialog launcher ---
+
+function openDialog(mode) {
+  localStorage.setItem("hmf_access_token", Office.context.roamingSettings.get("access_token") || "");
+  localStorage.setItem("hmf_token_expiry", Office.context.roamingSettings.get("token_expiry") || "0");
+  localStorage.setItem("hmf_refresh_token", Office.context.roamingSettings.get("refresh_token") || "");
+  localStorage.setItem("hmf_case_folders", Office.context.roamingSettings.get("case_folders") || "[]");
+  localStorage.setItem("hmf_mode", mode);
+  localStorage.setItem("hmf_sort_order", Office.context.roamingSettings.get("sort_order") || "date-desc");
+  const sentLastRun = Office.context.roamingSettings.get("sent_last_run");
+  if (sentLastRun) localStorage.setItem("hmf_sent_last_run", sentLastRun);
+
+  const dialogUrl = "https://ColinZeal42.github.io/outlook-filer/dialog.html";
+  Office.context.ui.displayDialogAsync(dialogUrl, { width: 70, height: 80, displayInIframe: false },
+    result => {
+      if (result.status !== Office.AsyncResultStatus.Succeeded) return;
+      const dlg = result.value;
+
+      dlg.addEventHandler(Office.EventType.DialogMessageReceived, args => {
+        try {
+          const msg = JSON.parse(args.message);
+          if (msg.action === "open-item" && msg.restId) {
+            const ewsId = Office.context.mailbox.convertToEwsId(msg.restId, Office.MailboxEnums.RestVersion.v2_0);
+            Office.context.mailbox.displayMessageForm(ewsId);
+          }
+        } catch(e) {}
+      });
+
+      dlg.addEventHandler(Office.EventType.DialogEventReceived, () => {
+        const tok = localStorage.getItem("hmf_access_token");
+        const exp = localStorage.getItem("hmf_token_expiry");
+        const ref = localStorage.getItem("hmf_refresh_token");
+        if (tok) {
+          Office.context.roamingSettings.set("access_token", tok);
+          Office.context.roamingSettings.set("token_expiry", exp || "0");
+          if (ref) Office.context.roamingSettings.set("refresh_token", ref);
+          Office.context.roamingSettings.saveAsync(() => {});
+        }
+      });
+    }
+  );
+}
+
+// --- Sign in ---
+
+function signIn() {
+  const btn = document.getElementById("connectBtn");
+  const accountEl = document.getElementById("account-status");
+  btn.disabled = true;
+  accountEl.textContent = "Opening sign-in window…";
+  accountEl.style.color = "#555";
+
+  Office.context.ui.displayDialogAsync(AUTH_URL, { height: 60, width: 40, displayInIframe: false },
+    result => {
+      if (result.status !== Office.AsyncResultStatus.Succeeded) {
+        accountEl.textContent = "Could not open sign-in window: " + result.error.message;
+        accountEl.style.color = "red";
+        btn.disabled = false;
+        return;
+      }
+      const dlg = result.value;
+      dlg.addEventHandler(Office.EventType.DialogMessageReceived, async args => {
+        dlg.close();
+        try {
+          const msg = JSON.parse(args.message);
+          if (!msg.token) {
+            accountEl.textContent = "Sign-in failed: " + (msg.error || "Unknown error");
+            accountEl.style.color = "red";
+            btn.disabled = false;
+            return;
+          }
+          accountEl.textContent = "Fetching case folders…";
+          accountEl.style.color = "#555";
+          let folders = [];
+          try { folders = await fetchCaseFolders(msg.token); } catch(e) {}
+          Office.context.roamingSettings.set("access_token", msg.token);
+          Office.context.roamingSettings.set("token_expiry", String(msg.expiry || (Date.now() + 3600000)));
+          if (msg.refreshToken) Office.context.roamingSettings.set("refresh_token", msg.refreshToken);
+          Office.context.roamingSettings.set("case_folders", JSON.stringify(folders));
+          Office.context.roamingSettings.saveAsync(r => {
+            btn.disabled = false;
+            if (r.status === Office.AsyncResultStatus.Succeeded) {
+              checkStatus();
+              populateFolderPicker();
+            } else {
+              accountEl.textContent = "Error saving: " + r.error.message;
+              accountEl.style.color = "red";
+            }
+          });
+        } catch(e) {
+          accountEl.textContent = "Error: " + e.message;
+          accountEl.style.color = "red";
+          btn.disabled = false;
+        }
+      });
+      dlg.addEventHandler(Office.EventType.DialogEventReceived, () => {
+        accountEl.textContent = "Sign-in cancelled.";
+        btn.disabled = false;
+      });
+    }
+  );
 }
 
 // --- Graph helpers ---
@@ -159,10 +392,10 @@ async function fetchEmailDetails(token, msgId) {
 
 function stripClutter(text) {
   return text
-    .replace(/\[.*?\]/g, "")          // [image: ...], [cid:...], etc.
-    .replace(/<https?:\/\/[^>]*>/g, "") // <https://...>
-    .replace(/https?:\/\/\S+/g, "")   // bare URLs
-    .replace(/\s{2,}/g, " ");          // collapse leftover whitespace
+    .replace(/\[.*?\]/g, "")
+    .replace(/<https?:\/\/[^>]*>/g, "")
+    .replace(/https?:\/\/\S+/g, "")
+    .replace(/\s{2,}/g, " ");
 }
 
 function extractPreviewLines(text, maxLines) {
@@ -186,611 +419,6 @@ function extractPreviewLines(text, maxLines) {
 
 function esc(s) {
   return String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-}
-
-// --- Thread grouping ---
-
-function groupByThread(messages, folders) {
-  const map = {};
-  const order = [];
-  for (const msg of messages) {
-    const cid = msg.conversationId || msg.id;
-    if (!map[cid]) {
-      map[cid] = { conversationId: cid, subject: msg.subject || "", emails: [], latestDate: 0 };
-      order.push(cid);
-    }
-    const d = new Date(msg.sentDateTime || msg.receivedDateTime || 0).getTime();
-    if (d > map[cid].latestDate) {
-      map[cid].latestDate = d;
-      map[cid].subject = msg.subject || map[cid].subject;
-    }
-    map[cid].emails.push({ msg, checked: true, body: null, isReplied: undefined, isForwarded: undefined });
-  }
-
-  return order.map(cid => {
-    const group = map[cid];
-    const counts = {};
-    for (const e of group.emails) {
-      const allRecip = [...(e.msg.toRecipients || []), ...(e.msg.ccRecipients || [])];
-      const ea = (e.msg.from && e.msg.from.emailAddress) || {};
-      const pt = [ea.name || "", ea.address || "",
-        ...allRecip.map(r => { const a = r.emailAddress || {}; return (a.name || "") + " " + (a.address || ""); })
-      ].join(" ");
-      const m = matchFolder({ subject: e.msg.subject || "", participantText: pt }, folders);
-      if (m) {
-        if (!counts[m.id]) counts[m.id] = { folder: m, n: 0 };
-        counts[m.id].n++;
-      }
-    }
-    const hits = Object.values(counts);
-    const best = hits.length ? hits.reduce((a, b) => b.n > a.n ? b : a).folder : null;
-
-    const isInternal = group.emails.every(e => {
-      const fromAddr = (e.msg.from && e.msg.from.emailAddress && e.msg.from.emailAddress.address) || "";
-      return !hasExternalRecipient([fromAddr, ...recipientAddresses(e.msg)], USER_DOMAIN);
-    });
-
-    return {
-      conversationId: cid,
-      subject: group.subject,
-      emails: group.emails,
-      match: best,
-      manualMatch: null,
-      armed: false,
-      expanded: false,
-      done: false,
-      latestDate: group.latestDate,
-      isInternal
-    };
-  }).sort((a, b) => b.latestDate - a.latestDate);
-}
-
-// --- Thread list UI ---
-
-function initThreadList(groups, folders, mode) {
-  _threadGroups = groups;
-  _threadFolders = folders;
-  _mode = mode || "inbox";
-  const el = document.getElementById("thread-list");
-  el.style.display = "block";
-  renderThreadList();
-}
-
-function renderThreadList() {
-  const el = document.getElementById("thread-list");
-  if (!el) return;
-  let html = "";
-
-  _threadGroups.forEach((group, idx) => {
-    const doneClass = group.done ? " tl-done" : "";
-    const subject = esc(group.subject || "(no subject)");
-    const effectiveFolder = group.manualMatch || group.match;
-    const matchHtml = group.isInternal
-      ? '<span class="tl-match tl-internal">Internal</span>'
-      : effectiveFolder
-        ? '<span class="tl-match">→ ' + esc(effectiveFolder.displayName) + '</span>'
-        : '<span class="tl-match tl-no-match">(no match)</span>';
-    const chevron = group.expanded ? "▲" : "▼";
-    const headerAttrs = group.done ? "" : ' onclick="toggleThread(' + idx + ')" style="cursor:pointer"';
-
-    html += '<div class="tl-group' + doneClass + '" id="tg-' + idx + '">';
-    html += '<div class="tl-header"' + headerAttrs + '>';
-    html += '<span class="tl-pill">' + group.emails.length + '</span>';
-    html += '<span class="tl-subject">' + subject + '</span>';
-    html += matchHtml;
-    html += '<span class="tl-chevron">' + chevron + '</span>';
-    html += '</div>';
-
-    if (group.expanded && !group.done) {
-      html += '<div class="tl-body">';
-      group.emails.forEach(e => {
-        const ea = (e.msg.from && e.msg.from.emailAddress) || {};
-        const sender = esc(ea.name || ea.address || "Unknown");
-        const dateStr = esc(formatDate(e.msg.sentDateTime || e.msg.receivedDateTime));
-        const badge = e.isForwarded ? '<span class="tl-badge tl-fwd">↪</span> '
-                    : e.isReplied   ? '<span class="tl-badge">↩</span> '
-                    : '';
-        const bodyHtml = e.body === null
-          ? '<em>Loading…</em>'
-          : esc(e.body || "(no preview)").replace(/\n/g, "<br>");
-        const checked = e.checked ? " checked" : "";
-
-        html += '<div class="tl-email">';
-        html += '<label class="tl-email-label">';
-        html += '<input type="checkbox" id="chk-' + esc(e.msg.id) + '"' + checked + ' onchange="onCheckChange(' + idx + ')">';
-        html += '<div class="tl-email-content">';
-        html += '<div class="tl-email-meta">' + badge + sender + ' <span class="tl-email-date">· ' + dateStr + '</span></div>';
-        html += '<div class="tl-email-body" onclick="event.preventDefault();openEmail(\'' + esc(e.msg.id) + '\')">' + bodyHtml + '</div>';
-        html += '</div></label></div>';
-      });
-
-      if (!group.isInternal) {
-        const selectedId = (group.manualMatch || group.match || {}).id || "";
-        html += '<select class="tl-folder-select" onchange="onFolderPick(' + idx + ', this.value)">';
-        html += '<option value=""' + (!selectedId ? ' selected' : '') + '>Choose folder…</option>';
-        _threadFolders.forEach(f => {
-          html += '<option value="' + esc(f.id) + '"' + (f.id === selectedId ? ' selected' : '') + '>' + esc(f.displayName) + '</option>';
-        });
-        html += '</select>';
-      }
-
-      html += '<div class="tl-actions" id="tl-actions-' + idx + '">' + buildActionButtons(idx) + '</div>';
-      html += '</div>';
-    }
-
-    html += '</div>';
-  });
-
-  el.innerHTML = html;
-}
-
-function buildActionButtons(idx) {
-  const group = _threadGroups[idx];
-  const checkedCount = group.emails.filter(e => e.checked).length;
-  const folder = group.manualMatch || group.match;
-  const fileOff = (!folder || checkedCount === 0) ? " disabled" : "";
-  const delOff  = checkedCount === 0 ? " disabled" : "";
-  const flagOff = checkedCount === 0 ? " disabled" : "";
-  const n = checkedCount > 0 ? " (" + checkedCount + ")" : "";
-
-  const armedLabel = '<span class="tl-armed-label">↩ Reply opened — send reply, then confirm:</span>';
-  let fileSection = "";
-  if (_mode === "sent") {
-    fileSection = '<button class="tl-btn tl-file"' + fileOff + ' onclick="fileThread(' + idx + ')">File' + n + '</button>';
-  } else if (!group.isInternal) {
-    fileSection = group.armed
-      ? armedLabel + '<button class="tl-btn tl-confirm-file"' + fileOff + ' onclick="fileThread(' + idx + ')">Confirm File' + n + '</button>'
-      : '<button class="tl-btn tl-file"' + fileOff + ' onclick="fileThread(' + idx + ')">File' + n + '</button>' +
-        '<button class="tl-btn tl-reply-file"' + fileOff + ' onclick="replyAndFile(' + idx + ')">Reply & File</button>';
-  } else {
-    fileSection = group.armed
-      ? armedLabel + '<button class="tl-btn tl-delete"' + delOff + ' onclick="deleteThread(' + idx + ')">Confirm Delete' + n + '</button>'
-      : '<button class="tl-btn tl-reply-delete"' + delOff + ' onclick="replyAndFile(' + idx + ')">Reply & Delete</button>';
-  }
-
-  const deleteBtn = _mode === "sent" ? "" :
-    '<button class="tl-btn tl-delete"' + delOff + ' onclick="deleteThread(' + idx + ')">Delete' + n + '</button>';
-  const flagBtn = _mode === "sent" ? "" :
-    '<button class="tl-btn tl-flag"' + flagOff + ' onclick="flagThread(' + idx + ')">Flag' + n + '</button>';
-
-  return fileSection + deleteBtn + flagBtn +
-    '<button class="tl-btn tl-skip" onclick="skipThread(' + idx + ')">Skip</button>';
-}
-
-function toggleThread(idx) {
-  const group = _threadGroups[idx];
-  if (!group || group.done) return;
-  const willExpand = !group.expanded;
-  const needsLoad = willExpand && group.emails.some(e => e.body === null);
-  group.expanded = willExpand;
-  renderThreadList();
-  if (needsLoad) loadThreadBodies(group);
-}
-
-async function loadThreadBodies(group) {
-  const token = await ensureFreshToken().catch(() => null);
-  if (!token) return;
-  const rawBodies = {};
-  await Promise.all(group.emails.map(async e => {
-    if (e.body !== null) return;
-    const details = await fetchEmailDetails(token, e.msg.id)
-      .catch(() => ({ body: null, isReplied: false, isForwarded: false }));
-    rawBodies[e.msg.id] = details.body || "";
-    e.body = extractPreviewLines(details.body, 5) || "(no preview)";
-    e.isReplied = details.isReplied;
-    e.isForwarded = details.isForwarded;
-  }));
-  if (!group.match) {
-    const counts = {};
-    for (const e of group.emails) {
-      const allRecip = [...(e.msg.toRecipients||[]), ...(e.msg.ccRecipients||[])];
-      const fromAddr = e.msg.from?.emailAddress?.address || "";
-      const fromName = e.msg.from?.emailAddress?.name || "";
-      const pt = [fromName, fromAddr, ...allRecip.map(r => (r.emailAddress?.name||"") + " " + (r.emailAddress?.address||""))].join(" ");
-      const m = matchFolder({ subject: e.msg.subject || "", participantText: pt, bodyText: rawBodies[e.msg.id] || "" }, _threadFolders);
-      if (m) { if (!counts[m.id]) counts[m.id] = { folder: m, n: 0 }; counts[m.id].n++; }
-    }
-    const entries = Object.values(counts);
-    if (entries.length) group.match = entries.reduce((a, b) => b.n > a.n ? b : a).folder;
-  }
-  if (group.expanded && !group.done) renderThreadList();
-}
-
-function onCheckChange(idx) {
-  const group = _threadGroups[idx];
-  if (!group) return;
-  group.emails.forEach(e => {
-    const chk = document.getElementById("chk-" + e.msg.id);
-    if (chk) e.checked = chk.checked;
-  });
-  const actionsEl = document.getElementById("tl-actions-" + idx);
-  if (actionsEl) actionsEl.innerHTML = buildActionButtons(idx);
-}
-
-function onFolderPick(idx, folderId) {
-  const group = _threadGroups[idx];
-  if (!group) return;
-  group.manualMatch = folderId ? (_threadFolders.find(f => f.id === folderId) || null) : null;
-  renderThreadList();
-}
-
-function setThreadWorking(idx, msg) {
-  const actionsEl = document.getElementById("tl-actions-" + idx);
-  if (actionsEl) actionsEl.innerHTML = '<span class="tl-working">' + esc(msg) + '</span>';
-}
-
-async function fileThread(idx) {
-  const group = _threadGroups[idx];
-  if (!group) return;
-  const folder = group.manualMatch || group.match;
-  if (!folder) return;
-  const checked = group.emails.filter(e => e.checked);
-  if (!checked.length) return;
-  setThreadWorking(idx, "Filing…");
-  try {
-    const token = await ensureFreshToken();
-    for (const e of checked) await moveMessage(token, e.msg.id, folder.id);
-    markThreadDone(idx);
-  } catch(err) {
-    setThreadWorking(idx, "Error — try again");
-  }
-}
-
-async function deleteThread(idx) {
-  const group = _threadGroups[idx];
-  if (!group) return;
-  const checked = group.emails.filter(e => e.checked);
-  if (!checked.length) return;
-  setThreadWorking(idx, "Deleting…");
-  try {
-    const token = await ensureFreshToken();
-    for (const e of checked) await moveMessage(token, e.msg.id, "deleteditems");
-    markThreadDone(idx);
-  } catch(err) {
-    setThreadWorking(idx, "Error — try again");
-  }
-}
-
-function skipThread(idx) {
-  markThreadDone(idx);
-}
-
-async function replyAndFile(idx) {
-  const group = _threadGroups[idx];
-  if (!group) return;
-  const latest = group.emails.slice().sort((a, b) =>
-    new Date(b.msg.sentDateTime || b.msg.receivedDateTime || 0) -
-    new Date(a.msg.sentDateTime || a.msg.receivedDateTime || 0)
-  )[0];
-  if (!latest) return;
-  setThreadWorking(idx, "Opening reply…");
-  try {
-    const token = await ensureFreshToken();
-    const res = await fetch(`${GRAPH_BASE}/me/messages/${latest.msg.id}/createReplyAll`, {
-      method: "POST",
-      headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
-      body: JSON.stringify({})
-    });
-    if (!res.ok) throw new Error("Graph " + res.status);
-    const draft = await res.json();
-    const ewsId = Office.context.mailbox.convertToEwsId(draft.id, Office.MailboxEnums.RestVersion.v2_0);
-    Office.context.mailbox.displayMessageForm(ewsId);
-    group.armed = true;
-    renderThreadList();
-  } catch(err) {
-    setThreadWorking(idx, "Could not open reply — try again");
-  }
-}
-
-async function flagThread(idx) {
-  const group = _threadGroups[idx];
-  if (!group) return;
-  const checked = group.emails.filter(e => e.checked);
-  if (!checked.length) return;
-  setThreadWorking(idx, "Flagging…");
-  try {
-    const token = await ensureFreshToken();
-    for (const e of checked) {
-      await fetch(`${GRAPH_BASE}/me/messages/${e.msg.id}`, {
-        method: "PATCH",
-        headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
-        body: JSON.stringify({ flag: { flagStatus: "flagged" } })
-      });
-    }
-    markThreadDone(idx);
-  } catch(err) {
-    setThreadWorking(idx, "Error — try again");
-  }
-}
-
-function markThreadDone(idx) {
-  const group = _threadGroups[idx];
-  if (!group) return;
-  group.done = true;
-  group.expanded = false;
-
-  const nextIdx = _threadGroups.findIndex((g, i) => i > idx && !g.done);
-  if (nextIdx !== -1) _threadGroups[nextIdx].expanded = true;
-
-  renderThreadList();
-
-  if (nextIdx !== -1) {
-    const nextEl = document.getElementById("tg-" + nextIdx);
-    if (nextEl) nextEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
-    if (_threadGroups[nextIdx].emails.some(e => e.body === null)) {
-      loadThreadBodies(_threadGroups[nextIdx]);
-    }
-  } else if (_threadGroups.every(g => g.done)) {
-    document.getElementById("queue-status").textContent = "All done ✓";
-  }
-}
-
-// --- Process Unfiled ---
-
-async function processUnfiled() {
-  const btn = document.getElementById("processBtn");
-  const baselineBtn = document.getElementById("setBaselineBtn");
-  const statusEl = document.getElementById("queue-status");
-
-  btn.disabled = true;
-  baselineBtn.style.display = "none";
-  document.getElementById("thread-list").style.display = "none";
-
-  const foldersJson = Office.context.roamingSettings.get("case_folders");
-  if (!foldersJson) {
-    statusEl.textContent = "No case folders cached. Click Refresh Folders first.";
-    btn.disabled = false;
-    return;
-  }
-
-  const lastRun = Office.context.roamingSettings.get("sent_last_run");
-  if (!lastRun) {
-    statusEl.textContent = "No baseline set. Set a baseline to begin tracking sent emails.";
-    baselineBtn.style.display = "inline-block";
-    btn.disabled = false;
-    return;
-  }
-
-  statusEl.textContent = "Checking Sent Items…";
-  const newTimestamp = new Date().toISOString();
-
-  try {
-    const token = await ensureFreshToken();
-    const msgsRes = await fetch(
-      `${GRAPH_BASE}/me/mailFolders/SentItems/messages` +
-      `?$filter=sentDateTime gt ${lastRun}` +
-      `&$top=100&$orderby=sentDateTime asc` +
-      `&$select=id,subject,toRecipients,ccRecipients,sentDateTime,from,conversationId,flag`,
-      { headers: { Authorization: "Bearer " + token } }
-    );
-    if (!msgsRes.ok) throw new Error("Graph " + msgsRes.status);
-    const messages = (await msgsRes.json()).value || [];
-
-    Office.context.roamingSettings.set("sent_last_run", newTimestamp);
-    Office.context.roamingSettings.saveAsync(() => {});
-
-    const nonCalendar = messages.filter(m =>
-      !isCalendarMessage(m.subject || "") &&
-      (m.flag?.flagStatus || "notFlagged") === "notFlagged" &&
-      hasExternalRecipient(recipientAddresses(m), USER_DOMAIN)
-    );
-    if (nonCalendar.length === 0) {
-      statusEl.textContent = "No new sent emails to process.";
-      btn.disabled = false;
-      return;
-    }
-
-    const folders = parseFolders(foldersJson);
-    const groups = groupByThread(nonCalendar, folders);
-    statusEl.textContent = `${groups.length} thread${groups.length !== 1 ? "s" : ""} to review:`;
-    initThreadList(groups, folders, "sent");
-  } catch(e) {
-    statusEl.textContent = "Error: " + e.message;
-  }
-
-  btn.disabled = false;
-}
-
-function setBaseline() {
-  const baselineBtn = document.getElementById("setBaselineBtn");
-  const statusEl = document.getElementById("queue-status");
-  baselineBtn.disabled = true;
-  Office.context.roamingSettings.set("sent_last_run", new Date().toISOString());
-  Office.context.roamingSettings.saveAsync(() => {
-    baselineBtn.style.display = "none";
-    baselineBtn.disabled = false;
-    statusEl.textContent = "Baseline set. Next run will file emails sent from now on.";
-  });
-}
-
-// --- File Inbox ---
-
-async function fileInbox() {
-  const btn = document.getElementById("fileInboxBtn");
-  const statusEl = document.getElementById("queue-status");
-
-  btn.disabled = true;
-  document.getElementById("thread-list").style.display = "none";
-  statusEl.textContent = "Scanning Inbox…";
-
-  const foldersJson = Office.context.roamingSettings.get("case_folders");
-  if (!foldersJson) {
-    statusEl.textContent = "No case folders cached. Click Refresh Folders first.";
-    btn.disabled = false;
-    return;
-  }
-
-  try {
-    const token = await ensureFreshToken();
-    const msgsRes = await fetch(
-      `${GRAPH_BASE}/me/mailFolders/Inbox/messages` +
-      `?$select=id,subject,from,toRecipients,ccRecipients,receivedDateTime,conversationId,flag` +
-      `&$top=100&$orderby=receivedDateTime desc`,
-      { headers: { Authorization: "Bearer " + token } }
-    );
-    if (!msgsRes.ok) throw new Error("Graph " + msgsRes.status);
-    const messages = (await msgsRes.json()).value || [];
-
-    const nonCalendar = messages.filter(m => !isCalendarMessage(m.subject || "") && (m.flag?.flagStatus || "notFlagged") === "notFlagged");
-    if (nonCalendar.length === 0) {
-      statusEl.textContent = "Inbox is empty.";
-      btn.disabled = false;
-      return;
-    }
-
-    const folders = parseFolders(foldersJson);
-    const groups = groupByThread(nonCalendar, folders);
-    statusEl.textContent = `${groups.length} thread${groups.length !== 1 ? "s" : ""} to review:`;
-    initThreadList(groups, folders);
-  } catch(e) {
-    statusEl.textContent = "Error: " + e.message;
-  }
-
-  btn.disabled = false;
-}
-
-// --- Dialog launcher ---
-
-function openDialog(mode) {
-  const statusEl = document.getElementById("queue-status");
-  statusEl.textContent = "Opening…";
-
-  // Copy roamingSettings → localStorage so dialog can read them
-  localStorage.setItem("hmf_access_token", Office.context.roamingSettings.get("access_token") || "");
-  localStorage.setItem("hmf_token_expiry", Office.context.roamingSettings.get("token_expiry") || "0");
-  localStorage.setItem("hmf_refresh_token", Office.context.roamingSettings.get("refresh_token") || "");
-  localStorage.setItem("hmf_case_folders", Office.context.roamingSettings.get("case_folders") || "[]");
-  localStorage.setItem("hmf_mode", mode);
-  const sentLastRun = Office.context.roamingSettings.get("sent_last_run");
-  if (sentLastRun) localStorage.setItem("hmf_sent_last_run", sentLastRun);
-
-  const dialogUrl = new URL("dialog.html", location.href).href;
-  Office.context.ui.displayDialogAsync(dialogUrl, { width: 70, height: 80, displayInIframe: false },
-    result => {
-      if (result.status !== Office.AsyncResultStatus.Succeeded) {
-        statusEl.textContent = "Could not open dialog: " + result.error.message;
-        return;
-      }
-      statusEl.textContent = "";
-      const dlg = result.value;
-
-      dlg.addEventHandler(Office.EventType.DialogMessageReceived, args => {
-        try {
-          const msg = JSON.parse(args.message);
-          if (msg.action === "open-item" && msg.restId) {
-            const ewsId = Office.context.mailbox.convertToEwsId(msg.restId, Office.MailboxEnums.RestVersion.v2_0);
-            Office.context.mailbox.displayMessageForm(ewsId);
-          }
-        } catch(e) {}
-      });
-
-      dlg.addEventHandler(Office.EventType.DialogEventReceived, () => {
-        // Sync refreshed token back to roamingSettings
-        const tok = localStorage.getItem("hmf_access_token");
-        const exp = localStorage.getItem("hmf_token_expiry");
-        const ref = localStorage.getItem("hmf_refresh_token");
-        if (tok) {
-          Office.context.roamingSettings.set("access_token", tok);
-          Office.context.roamingSettings.set("token_expiry", exp || "0");
-          if (ref) Office.context.roamingSettings.set("refresh_token", ref);
-          Office.context.roamingSettings.saveAsync(() => {});
-        }
-      });
-    }
-  );
-}
-
-// --- Folder refresh ---
-
-async function fetchCaseFolders(token) {
-  const res = await fetch(`${GRAPH_BASE}/me/mailFolders?$top=100&$expand=childFolders($top=100)`, {
-    headers: { Authorization: "Bearer " + token },
-  });
-  if (!res.ok) throw new Error("Graph " + res.status);
-  const data = await res.json();
-  const casesFolder = data.value.find(f => f.displayName === "__Cases");
-  if (!casesFolder) throw new Error("__Cases folder not found");
-  return (casesFolder.childFolders || []).map(f => ({ displayName: f.displayName, id: f.id }));
-}
-
-async function refreshFolders() {
-  const btn = document.getElementById("refreshBtn");
-  const statusEl = document.getElementById("status");
-  btn.disabled = true;
-  statusEl.textContent = "Refreshing folder list...";
-  try {
-    const token = await ensureFreshToken();
-    const folders = await fetchCaseFolders(token);
-    Office.context.roamingSettings.set("case_folders", JSON.stringify(folders));
-    Office.context.roamingSettings.saveAsync(() => { btn.disabled = false; checkStatus(); });
-  } catch(e) {
-    statusEl.textContent = "Error: " + e.message;
-    statusEl.style.color = "red";
-    btn.disabled = false;
-  }
-}
-
-// --- Sign in ---
-
-function signIn() {
-  const btn = document.getElementById("connectBtn");
-  const statusEl = document.getElementById("status");
-  btn.disabled = true;
-  statusEl.textContent = "Opening sign-in window...";
-
-  Office.context.ui.displayDialogAsync(AUTH_URL, { height: 60, width: 40, displayInIframe: false },
-    result => {
-      if (result.status !== Office.AsyncResultStatus.Succeeded) {
-        statusEl.textContent = "Could not open sign-in window: " + result.error.message;
-        statusEl.style.color = "red";
-        btn.disabled = false;
-        return;
-      }
-      const dlg = result.value;
-      dlg.addEventHandler(Office.EventType.DialogMessageReceived, async args => {
-        dlg.close();
-        try {
-          const msg = JSON.parse(args.message);
-          if (!msg.token) {
-            statusEl.textContent = "Sign-in failed: " + (msg.error || "Unknown error");
-            statusEl.style.color = "red";
-            btn.disabled = false;
-            return;
-          }
-          statusEl.textContent = "Fetching case folders...";
-          let folders = [];
-          try { folders = await fetchCaseFolders(msg.token); } catch(e) {}
-          Office.context.roamingSettings.set("access_token", msg.token);
-          Office.context.roamingSettings.set("token_expiry", String(msg.expiry || (Date.now() + 3600000)));
-          if (msg.refreshToken) Office.context.roamingSettings.set("refresh_token", msg.refreshToken);
-          Office.context.roamingSettings.set("case_folders", JSON.stringify(folders));
-          Office.context.roamingSettings.saveAsync(r => {
-            btn.disabled = false;
-            if (r.status === Office.AsyncResultStatus.Succeeded) {
-              checkStatus();
-              if (_pendingMode) {
-                const pendingMode = _pendingMode;
-                _pendingMode = null;
-                if (pendingMode === "unsent") processUnfiled();
-                else if (pendingMode === "inbox") fileInbox();
-              }
-            } else {
-              statusEl.textContent = "Error saving: " + r.error.message;
-              statusEl.style.color = "red";
-            }
-          });
-        } catch(e) {
-          statusEl.textContent = "Error: " + e.message;
-          statusEl.style.color = "red";
-          btn.disabled = false;
-        }
-      });
-      dlg.addEventHandler(Office.EventType.DialogEventReceived, () => {
-        statusEl.textContent = "Sign-in cancelled.";
-        btn.disabled = false;
-      });
-    }
-  );
 }
 
 // --- Email matching helpers ---

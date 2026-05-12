@@ -2,78 +2,77 @@
 <html>
 <head>
   <meta charset="UTF-8"/>
-  <title>HMF Email Filer Setup</title>
+  <title>HMF Email Filer</title>
   <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
   <script>
-    var SETUP_VERSION = "v27";
+    var SETUP_VERSION = "v28";
     var s = document.createElement("script");
     s.src = "setup.js?t=" + Date.now();
     document.head.appendChild(s);
   </script>
   <style>
-    body { font-family: 'Segoe UI', sans-serif; padding: 16px; color: #1a1a1a; margin: 0; }
-    h2 { font-size: 16px; margin: 0 0 14px; }
-    #status { font-size: 13px; margin-bottom: 14px; padding: 8px 12px; border-radius: 4px; background: #f3f3f3; }
-    .btn { padding: 7px 16px; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }
-    .btn:disabled { background: #aaa; cursor: default; }
-    #connectBtn { background: #0078d4; display: none; }
-    #refreshBtn { display: none; margin-left: 6px; background: #555; }
-    #processBtn { display: none; margin-top: 12px; background: #107c10; }
-    #setBaselineBtn { display: none; margin-top: 6px; margin-left: 6px; background: #8764b8; }
-    #fileInboxBtn { display: none; margin-top: 6px; margin-left: 6px; background: #c43e1c; }
-    #queue-status { font-size: 13px; margin-top: 12px; color: #555; min-height: 18px; }
-
-    /* Thread list */
-    #thread-list { display: none; margin-top: 10px; }
-    .tl-group { border: 1px solid #e0e0e0; border-radius: 4px; margin-bottom: 7px; overflow: hidden; }
-    .tl-done { opacity: 0.42; pointer-events: none; }
-    .tl-header { display: flex; align-items: baseline; gap: 6px; padding: 7px 10px; background: #f9f9f9; font-size: 12px; user-select: none; }
-    .tl-header:hover { background: #f0f0f0; }
-    .tl-pill { background: #0078d4; color: #fff; border-radius: 10px; padding: 1px 6px; font-size: 10px; font-weight: 700; flex-shrink: 0; }
-    .tl-subject { font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .tl-match { font-size: 11px; color: #0078d4; flex-shrink: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 120px; }
-    .tl-no-match { color: #aaa; font-style: italic; }
-    .tl-internal { color: #a4262c; font-style: italic; }
-    .tl-chevron { font-size: 10px; color: #888; flex-shrink: 0; }
-    .tl-body { border-top: 1px solid #e0e0e0; padding: 8px 10px; }
-    .tl-email { margin-bottom: 8px; }
-    .tl-email-label { display: flex; align-items: flex-start; gap: 7px; cursor: pointer; }
-    .tl-email-label input[type=checkbox] { margin-top: 3px; flex-shrink: 0; }
-    .tl-email-content { flex: 1; min-width: 0; }
-    .tl-email-meta { font-size: 12px; font-weight: 600; color: #1a1a1a; margin-bottom: 2px; }
-    .tl-email-date { font-weight: 400; color: #888; }
-    .tl-email-body { font-size: 11px; color: #555; line-height: 1.45; background: #f9f9f9; border: 1px solid #e8e8e8; border-radius: 3px; padding: 5px 8px; white-space: pre-wrap; word-break: break-word; cursor: pointer; }
-    .tl-email-body:hover { background: #eef4fb; border-color: #c7e0f4; }
-    .tl-badge { font-size: 11px; font-weight: 700; color: #ca5010; }
-    .tl-fwd { color: #8764b8; }
-    .tl-folder-select { width: 100%; margin: 6px 0; font-size: 12px; padding: 4px 6px; border: 1px solid #ccc; border-radius: 3px; font-family: 'Segoe UI', sans-serif; }
-    .tl-actions { display: flex; gap: 5px; margin-top: 4px; flex-wrap: wrap; }
-    .tl-btn { padding: 5px 11px; border: none; border-radius: 3px; color: #fff; font-size: 12px; cursor: pointer; font-family: 'Segoe UI', sans-serif; }
-    .tl-btn:disabled { background: #bbb !important; cursor: default; }
-    .tl-file { background: #107c10; }
-    .tl-reply-file { background: #0078d4; }
-    .tl-reply-delete { background: #a4262c; }
-    .tl-confirm-file { background: #107c10; font-weight: 700; }
-    .tl-delete { background: #a4262c; }
-    .tl-flag { background: #ca5010; }
-    .tl-skip { background: #605e5c; }
-    .tl-working { font-size: 12px; color: #555; font-style: italic; }
-    .tl-armed-label { flex-basis: 100%; font-size: 11px; color: #0078d4; font-style: italic; margin-bottom: 2px; }
-
+    body { font-family: 'Segoe UI', sans-serif; padding: 16px; color: #1a1a1a; margin: 0; font-size: 13px; }
+    h2 { font-size: 15px; margin: 0 0 16px; font-weight: 700; }
+    .ss { border-top: 1px solid #e0e0e0; padding: 12px 0; }
+    .ss-head { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: #888; margin-bottom: 8px; }
+    .ss-row { display: flex; gap: 6px; align-items: center; margin-bottom: 4px; }
+    .ss-sub { font-size: 12px; color: #555; margin-top: 5px; min-height: 16px; }
+    .ss-label { display: block; font-size: 12px; color: #555; margin-bottom: 4px; }
+    .ss-select { flex: 1; font-size: 12px; padding: 4px 6px; border: 1px solid #ccc; border-radius: 3px; font-family: 'Segoe UI', sans-serif; min-width: 0; }
+    .ss-select:disabled { background: #f3f3f3; color: #aaa; }
+    .ss-checkbox-label { display: flex; align-items: flex-start; gap: 7px; font-size: 12px; color: #aaa; margin-top: 10px; cursor: default; }
+    .ss-checkbox-label input { margin-top: 2px; flex-shrink: 0; }
+    .btn { padding: 6px 14px; border: none; border-radius: 3px; font-size: 12px; cursor: pointer; font-family: 'Segoe UI', sans-serif; }
+    .btn:disabled { opacity: 0.5; cursor: default; }
+    .btn-primary { background: #0078d4; color: #fff; }
+    .btn-secondary { background: #f3f3f3; color: #1a1a1a; border: 1px solid #ccc; }
     #ver { margin-top: 20px; font-size: 11px; color: #bbb; }
   </style>
 </head>
 <body>
   <h2>HMF Email Filer</h2>
-  <div id="status">Checking status...</div>
-  <button id="connectBtn" class="btn">Connect to Microsoft</button>
-  <button id="refreshBtn" class="btn" style="display:none">Refresh Folders</button>
-  <br/>
-  <button id="processBtn" class="btn">File Sent Emails</button>
-  <button id="setBaselineBtn" class="btn">Set Baseline</button>
-  <button id="fileInboxBtn" class="btn">File Inbox</button>
-  <div id="queue-status"></div>
-  <div id="thread-list"></div>
+
+  <section class="ss">
+    <div class="ss-head">Account</div>
+    <div id="account-status">Checking...</div>
+    <div style="margin-top:8px">
+      <button id="connectBtn" class="btn btn-primary" style="display:none">Connect to Microsoft</button>
+    </div>
+  </section>
+
+  <section class="ss">
+    <div class="ss-head">Folders</div>
+    <div class="ss-row">
+      <select id="rootFolderPicker" class="ss-select" onchange="onRootFolderChange()" disabled>
+        <option value="">Choose root folder…</option>
+      </select>
+      <button id="refreshBtn" class="btn btn-secondary" title="Refresh case folders" disabled>↻</button>
+    </div>
+    <div id="folder-count" class="ss-sub"></div>
+  </section>
+
+  <section class="ss">
+    <div class="ss-head">Baseline</div>
+    <div id="baseline-status" class="ss-sub"></div>
+    <div style="margin-top:8px">
+      <button id="setBaselineBtn" class="btn btn-secondary">Set Baseline</button>
+    </div>
+  </section>
+
+  <section class="ss">
+    <div class="ss-head">Filing Behavior</div>
+    <div class="ss-label">Sort order</div>
+    <select id="sortOrderPicker" class="ss-select" onchange="onSortOrderChange()" style="width:100%">
+      <option value="date-desc">Newest first</option>
+      <option value="date-asc">Oldest first</option>
+      <option value="folder">By target folder</option>
+    </select>
+    <label class="ss-checkbox-label">
+      <input type="checkbox" id="autoFileSent" disabled>
+      Auto-file sent emails at send time <em>(coming soon)</em>
+    </label>
+  </section>
+
   <div id="ver"></div>
 </body>
 </html>

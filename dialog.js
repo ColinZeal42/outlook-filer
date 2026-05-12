@@ -6,6 +6,7 @@ const USER_DOMAIN = "hmflaw.com";
 let _threadGroups = [];
 let _threadFolders = [];
 let _mode = "inbox";
+let _sortOrder = "date-desc";
 
 Office.onReady(() => {
   _mode = localStorage.getItem("hmf_mode") || "inbox";
@@ -223,7 +224,15 @@ function groupByThread(messages, folders) {
       latestDate: group.latestDate,
       isInternal
     };
-  }).sort((a, b) => b.latestDate - a.latestDate);
+  }).sort((a, b) => {
+    if (_sortOrder === "date-asc") return a.latestDate - b.latestDate;
+    if (_sortOrder === "folder") {
+      const nameA = a.isInternal ? "\xff\xff" : (a.match ? a.match.displayName : "\xff");
+      const nameB = b.isInternal ? "\xff\xff" : (b.match ? b.match.displayName : "\xff");
+      return nameA.localeCompare(nameB);
+    }
+    return b.latestDate - a.latestDate;
+  });
 }
 
 // --- Thread list UI ---
@@ -550,6 +559,7 @@ async function processSent() {
       return;
     }
     const folders = parseFolders(foldersJson);
+    _sortOrder = localStorage.getItem("hmf_sort_order") || "date-desc";
     const groups = groupByThread(nonCalendar, folders);
     statusEl.textContent = `${groups.length} thread${groups.length !== 1 ? "s" : ""} to review:`;
     initThreadList(groups, folders, "sent");
@@ -585,6 +595,7 @@ async function processInbox() {
       return;
     }
     const folders = parseFolders(foldersJson);
+    _sortOrder = localStorage.getItem("hmf_sort_order") || "date-desc";
     const groups = groupByThread(nonCalendar, folders);
     statusEl.textContent = `${groups.length} thread${groups.length !== 1 ? "s" : ""} to review:`;
     initThreadList(groups, folders, "inbox");
