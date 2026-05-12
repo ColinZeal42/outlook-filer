@@ -222,7 +222,8 @@ function groupByThread(messages, folders) {
       }
     }
     const hits = Object.values(counts);
-    const best = hits.length ? hits.reduce((a, b) => b.n > a.n ? b : a).folder : null;
+    const best = hits.length === 1 ? hits[0].folder : null;
+    const conflicts = hits.length > 1 ? hits.map(h => h.folder) : [];
 
     const isInternal = group.emails.every(e => {
       const fromAddr = (e.msg.from && e.msg.from.emailAddress && e.msg.from.emailAddress.address) || "";
@@ -234,7 +235,9 @@ function groupByThread(messages, folders) {
       subject: group.subject,
       emails: group.emails,
       match: best,
+      conflicts,
       manualMatch: null,
+      showPicker: false,
       expanded: false,
       done: false,
       latestDate: group.latestDate,
@@ -263,9 +266,13 @@ function renderThreadList() {
     const subject = esc(group.subject || "(no subject)");
     const matchHtml = group.isInternal
       ? '<span class="tl-match tl-internal">Internal</span>'
-      : group.match
-        ? '<span class="tl-match">→ ' + esc(group.match.displayName) + '</span>'
-        : '<span class="tl-match tl-no-match">(no match)</span>';
+      : group.manualMatch
+        ? '<span class="tl-match">→ ' + esc(group.manualMatch.displayName) + '</span>'
+        : group.conflicts.length
+          ? '<span class="tl-match tl-conflict">⚠ ' + group.conflicts.length + ' matches</span>'
+          : group.match
+            ? '<span class="tl-match">→ ' + esc(group.match.displayName) + '</span>'
+            : '<span class="tl-match tl-no-match">(no match)</span>';
     const chevron = group.expanded ? "▲" : "▼";
     const headerAttrs = group.done ? "" : ' onclick="toggleThread(' + idx + ')" style="cursor:pointer"';
 
@@ -300,14 +307,24 @@ function renderThreadList() {
         html += '</div></label></div>';
       });
 
-      if (!group.match && !group.isInternal) {
-        html += '<select class="tl-folder-select" onchange="onFolderPick(' + idx + ', this.value)">';
-        html += '<option value="">Choose folder…</option>';
-        _threadFolders.forEach(f => {
-          const sel = (group.manualMatch && group.manualMatch.id === f.id) ? " selected" : "";
-          html += '<option value="' + esc(f.id) + '"' + sel + '>' + esc(f.displayName) + '</option>';
-        });
-        html += '</select>';
+      if (!group.isInternal) {
+        if (group.conflicts.length && !group.manualMatch) {
+          html += '<div class="tl-conflict-label">Multiple matches — choose one:</div>';
+          html += '<div class="tl-conflict-chips">';
+          group.conflicts.forEach(f => {
+            html += '<button class="tl-btn tl-conflict-chip" onclick="onFolderPick(' + idx + ',\'' + esc(f.id) + '\')">' + esc(f.displayName) + '</button>';
+          });
+          html += '</div>';
+        }
+        if (!group.match && !group.conflicts.length || group.showPicker) {
+          html += '<select class="tl-folder-select" onchange="onFolderPick(' + idx + ', this.value)">';
+          html += '<option value="">Choose folder…</option>';
+          _threadFolders.forEach(f => {
+            const sel = (group.manualMatch && group.manualMatch.id === f.id) ? " selected" : "";
+            html += '<option value="' + esc(f.id) + '"' + sel + '>' + esc(f.displayName) + '</option>';
+          });
+          html += '</select>';
+        }
       }
 
       html += '<div class="tl-actions" id="tl-actions-' + idx + '">' + buildActionButtons(idx) + '</div>';
@@ -323,16 +340,19 @@ function renderThreadList() {
 function buildActionButtons(idx) {
   const group = _threadGroups[idx];
   const checkedCount = group.emails.filter(e => e.checked).length;
-  const folder = group.match || group.manualMatch;
+  const folder = group.manualMatch || group.match;
   const delOff  = checkedCount === 0 ? " disabled" : "";
   const flagOff = checkedCount === 0 ? " disabled" : "";
   const n = checkedCount > 0 ? " (" + checkedCount + ")" : "";
   const fileBtn = group.isInternal ? "" :
     '<button class="tl-btn tl-file"' + ((!folder || checkedCount === 0) ? " disabled" : "") +
     ' onclick="fileThread(' + idx + ')">File' + n + '</button>';
+  const otherBtn = group.isInternal ? "" :
+    '<button class="tl-btn tl-other" onclick="toggleOtherPicker(' + idx + ')">' + (group.showPicker ? 'Cancel' : 'Other') + '</button>';
   return fileBtn +
          '<button class="tl-btn tl-delete"' + delOff  + ' onclick="deleteThread(' + idx + ')">Delete' + n + '</button>' +
          '<button class="tl-btn tl-flag"'   + flagOff + ' onclick="flagThread('   + idx + ')">Flag'   + n + '</button>' +
+         otherBtn +
          '<button class="tl-btn tl-skip" onclick="skipThread(' + idx + ')">Skip</button>';
 }
 
@@ -359,7 +379,7 @@ async function loadThreadBodies(group) {
     e.isReplied = details.isReplied;
     e.isForwarded = details.isForwarded;
   }));
-  if (!group.match) {
+  if (!group.match && !group.conflicts.length) {
     const counts = {};
     for (const e of group.emails) {
       const allRecip = [...(e.msg.toRecipients||[]), ...(e.msg.ccRecipients||[])];
@@ -370,7 +390,8 @@ async function loadThreadBodies(group) {
       if (m) { if (!counts[m.id]) counts[m.id] = { folder: m, n: 0 }; counts[m.id].n++; }
     }
     const entries = Object.values(counts);
-    if (entries.length) group.match = entries.reduce((a, b) => b.n > a.n ? b : a).folder;
+    if (entries.length === 1) group.match = entries[0].folder;
+    else if (entries.length > 1) group.conflicts = entries.map(h => h.folder);
   }
   if (group.expanded && !group.done) renderThreadList();
 }
@@ -386,12 +407,19 @@ function onCheckChange(idx) {
   if (actionsEl) actionsEl.innerHTML = buildActionButtons(idx);
 }
 
+function toggleOtherPicker(idx) {
+  const group = _threadGroups[idx];
+  if (!group) return;
+  group.showPicker = !group.showPicker;
+  renderThreadList();
+}
+
 function onFolderPick(idx, folderId) {
   const group = _threadGroups[idx];
   if (!group) return;
   group.manualMatch = folderId ? (_threadFolders.find(f => f.id === folderId) || null) : null;
-  const actionsEl = document.getElementById("tl-actions-" + idx);
-  if (actionsEl) actionsEl.innerHTML = buildActionButtons(idx);
+  group.showPicker = false;
+  renderThreadList();
 }
 
 function setThreadWorking(idx, msg) {
