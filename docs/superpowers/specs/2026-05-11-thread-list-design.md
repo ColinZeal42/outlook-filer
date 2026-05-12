@@ -75,14 +75,26 @@ innerHTML — no virtual DOM, just string concatenation with event wiring after 
 
 Each row shows: email count pill · subject · folder match (or "no match" in grey) · expand chevron.
 
-### Expanded thread
+### Expanded thread — with folder match
 ```
 ▲  Albrecht v. Spirit Airlines   → 2024CV030653-Albrecht
    ☑  Liz Stalnaker   May 9    Hi John, following up on the deposition…
    ☑  John Smith      May 10   Thanks Liz, I've reviewed the transcript…
    ☐  Carol Danes     May 11   See attached – updated schedule.
-   [ File 2 Selected ]   [ Skip Thread ]
+   [ File 2 ]   [ Delete 2 ]   [ Skip ]
 ```
+
+### Expanded thread — no folder match
+```
+▲  FW: Intake form – new matter   (no match)
+   ☑  Karen Bell    May 10   Please find the intake form attached…
+   ☑  J. Smith      May 11   Thanks Karen, I'll follow up Monday.
+   [ ▾ Choose folder… ]   [ File 2 ]   [ Delete 2 ]   [ Skip ]
+```
+
+No-match threads show a `<select>` dropdown populated from the cached case folders
+(same list used for auto-matching). The File button is disabled until a folder is chosen.
+Choosing a folder enables File and updates the button label.
 
 Body previews show up to 5 lines. While loading: "Loading…" placeholder per email.
 Reply (↩) / Forward (↪) badges shown inline next to sender name when applicable.
@@ -92,10 +104,12 @@ Reply (↩) / Forward (↪) badges shown inline next to sender name when applica
   all emails in the group (`fetchEmailDetails` per email, in parallel via `Promise.all`).
 - Multiple threads can be open simultaneously.
 - All emails default to checked on expand.
-- **File N Selected**: moves all checked emails to `match.id` via `moveMessage`. On
-  success, thread collapses and dims (opacity 0.4, pointer-events none). Count in
-  "File" button updates live as checkboxes change.
-- **Skip Thread**: marks done without moving anything. Thread collapses and dims.
+- **File N**: moves all checked emails to the matched (or chosen) folder via `moveMessage`.
+  On success, thread collapses and dims (opacity 0.4, pointer-events none). Count in
+  File/Delete buttons updates live as checkboxes change.
+- **Delete N**: moves all checked emails to Deleted Items (`deleteditems`) via `moveMessage`.
+  Thread collapses and dims on success.
+- **Skip**: marks done without moving anything. Thread collapses and dims.
 - When all threads are done: `queue-status` shows "All done ✓".
 
 ---
@@ -117,7 +131,8 @@ Reply (↩) / Forward (↪) badges shown inline next to sender name when applica
 - `toggleThread(conversationId)` — expand/collapse + triggers lazy-load on expand
 - `loadThreadBodies(group)` — parallel `fetchEmailDetails` for all emails in group;
   updates `group.emails[i].body / isReplied / isForwarded`, re-renders that group
-- `fileThread(conversationId)` — files checked emails, marks done
+- `fileThread(conversationId)` — files checked emails to matched or user-chosen folder, marks done
+- `deleteThread(conversationId)` — moves checked emails to Deleted Items, marks done
 - `skipThread(conversationId)` — marks done without moving
 
 ### Unchanged
@@ -148,5 +163,6 @@ card code, reverting is a single git revert followed by a smaller targeted chang
 5. Skip marks thread done without any move.
 6. Thread dims after file or skip; "All done ✓" when all threads complete.
 7. Single-email threads work correctly (group of 1).
-8. Threads with no folder match show "no match" and have no File button (Skip only).
-9. File Inbox flow is identical in behavior to File Unsent.
+8. Threads with no folder match show folder dropdown; File button disabled until folder chosen.
+9. Delete moves checked emails to Deleted Items regardless of match status.
+10. File Inbox flow is identical in behavior to File Unsent.
