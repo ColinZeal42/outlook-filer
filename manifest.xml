@@ -7,7 +7,7 @@
   xsi:type="MailApp">
 
   <Id>c41a2c93-abb6-4276-8f11-a47e71353c65</Id>
-  <Version>3.0.6.0</Version>
+  <Version>3.0.7.0</Version>
   <ProviderName>HMF</ProviderName>
   <DefaultLocale>en-US</DefaultLocale>
   <DisplayName DefaultValue="HMF Email Filer"/>
@@ -89,8 +89,8 @@
                       <bt:Image size="32" resid="Icon32"/>
                       <bt:Image size="80" resid="Icon80"/>
                     </Icon>
-                    <Action xsi:type="ExecuteFunction">
-                      <FunctionName>openFilingSent</FunctionName>
+                    <Action xsi:type="ShowTaskpane">
+                      <SourceLocation resid="FileSentUrl"/>
                     </Action>
                   </Control>
                   <Control xsi:type="Button" id="hmfFileInboxBtn">
@@ -104,8 +104,8 @@
                       <bt:Image size="32" resid="Icon32"/>
                       <bt:Image size="80" resid="Icon80"/>
                     </Icon>
-                    <Action xsi:type="ExecuteFunction">
-                      <FunctionName>openFilingInbox</FunctionName>
+                    <Action xsi:type="ShowTaskpane">
+                      <SourceLocation resid="FileInboxUrl"/>
                     </Action>
                   </Control>
                 </Group>
@@ -125,6 +125,8 @@
         <bt:Urls>
           <bt:Url id="Commands.Html" DefaultValue="https://ColinZeal42.github.io/outlook-filer/commands.html?v=20"/>
           <bt:Url id="Setup.Html" DefaultValue="https://ColinZeal42.github.io/outlook-filer/setup.html"/>
+          <bt:Url id="FileSentUrl" DefaultValue="https://ColinZeal42.github.io/outlook-filer/setup.html?mode=sent"/>
+          <bt:Url id="FileInboxUrl" DefaultValue="https://ColinZeal42.github.io/outlook-filer/setup.html?mode=inbox"/>
         </bt:Urls>
         <bt:ShortStrings>
           <bt:String id="AddInName" DefaultValue="HMF Email Filer"/>

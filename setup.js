@@ -28,10 +28,10 @@ Office.onReady(async () => {
       _pendingMode = mode;
       document.getElementById("queue-status").textContent = "Connecting to Microsoft...";
       signIn();
-    } else if (mode === "unsent") {
-      processUnfiled();
+    } else if (mode === "sent") {
+      openDialog("sent");
     } else if (mode === "inbox") {
-      fileInbox();
+      openDialog("inbox");
     }
   }
 });
