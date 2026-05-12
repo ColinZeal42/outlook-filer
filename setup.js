@@ -202,7 +202,7 @@ function renderThreadList() {
     const chevron = group.expanded ? "▲" : "▼";
     const headerAttrs = group.done ? "" : ' onclick="toggleThread(' + idx + ')" style="cursor:pointer"';
 
-    html += '<div class="tl-group' + doneClass + '">';
+    html += '<div class="tl-group' + doneClass + '" id="tg-' + idx + '">';
     html += '<div class="tl-header"' + headerAttrs + '>';
     html += '<span class="tl-pill">' + group.emails.length + '</span>';
     html += '<span class="tl-subject">' + subject + '</span>';
@@ -322,7 +322,7 @@ async function fileThread(idx) {
   const token = Office.context.roamingSettings.get("access_token");
   setThreadWorking(idx, "Filing…");
   try {
-    await Promise.all(checked.map(e => moveMessage(token, e.msg.id, folder.id)));
+    for (const e of checked) await moveMessage(token, e.msg.id, folder.id);
     markThreadDone(idx);
   } catch(err) {
     setThreadWorking(idx, "Error — try again");
@@ -337,7 +337,7 @@ async function deleteThread(idx) {
   const token = Office.context.roamingSettings.get("access_token");
   setThreadWorking(idx, "Deleting…");
   try {
-    await Promise.all(checked.map(e => moveMessage(token, e.msg.id, "deleteditems")));
+    for (const e of checked) await moveMessage(token, e.msg.id, "deleteditems");
     markThreadDone(idx);
   } catch(err) {
     setThreadWorking(idx, "Error — try again");
@@ -353,8 +353,19 @@ function markThreadDone(idx) {
   if (!group) return;
   group.done = true;
   group.expanded = false;
+
+  const nextIdx = _threadGroups.findIndex((g, i) => i > idx && !g.done);
+  if (nextIdx !== -1) _threadGroups[nextIdx].expanded = true;
+
   renderThreadList();
-  if (_threadGroups.every(g => g.done)) {
+
+  if (nextIdx !== -1) {
+    const nextEl = document.getElementById("tg-" + nextIdx);
+    if (nextEl) nextEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    if (_threadGroups[nextIdx].emails.some(e => e.body === null)) {
+      loadThreadBodies(_threadGroups[nextIdx]);
+    }
+  } else if (_threadGroups.every(g => g.done)) {
     document.getElementById("queue-status").textContent = "All done ✓";
   }
 }
