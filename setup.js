@@ -156,13 +156,21 @@ async function fetchEmailDetails(token, msgId) {
 
 // --- Helpers ---
 
+function stripClutter(text) {
+  return text
+    .replace(/\[.*?\]/g, "")          // [image: ...], [cid:...], etc.
+    .replace(/<https?:\/\/[^>]*>/g, "") // <https://...>
+    .replace(/https?:\/\/\S+/g, "")   // bare URLs
+    .replace(/\s{2,}/g, " ");          // collapse leftover whitespace
+}
+
 function extractPreviewLines(text, maxLines) {
   if (!text) return "";
   const lines = text.split(/\r?\n/);
   const result = [];
   let blankRun = 0;
   for (const line of lines) {
-    const t = line.trim();
+    const t = stripClutter(line).trim();
     if (!t) {
       if (blankRun === 0 && result.length > 0) result.push("");
       blankRun++;
