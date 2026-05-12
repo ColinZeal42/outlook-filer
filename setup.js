@@ -310,9 +310,11 @@ function buildActionButtons(idx) {
   const folder = group.match || group.manualMatch;
   const fileOff = (!folder || checkedCount === 0) ? " disabled" : "";
   const delOff  = checkedCount === 0 ? " disabled" : "";
-  const n = checkedCount > 0 ? " " + checkedCount : "";
+  const flagOff = checkedCount === 0 ? " disabled" : "";
+  const n = checkedCount > 0 ? " (" + checkedCount + ")" : "";
   return '<button class="tl-btn tl-file"'   + fileOff + ' onclick="fileThread('   + idx + ')">File'   + n + '</button>' +
          '<button class="tl-btn tl-delete"' + delOff  + ' onclick="deleteThread(' + idx + ')">Delete' + n + '</button>' +
+         '<button class="tl-btn tl-flag"'   + flagOff + ' onclick="flagThread('   + idx + ')">Flag'   + n + '</button>' +
          '<button class="tl-btn tl-skip" onclick="skipThread(' + idx + ')">Skip</button>';
 }
 
@@ -415,6 +417,27 @@ function skipThread(idx) {
   markThreadDone(idx);
 }
 
+async function flagThread(idx) {
+  const group = _threadGroups[idx];
+  if (!group) return;
+  const checked = group.emails.filter(e => e.checked);
+  if (!checked.length) return;
+  setThreadWorking(idx, "Flagging…");
+  try {
+    const token = await ensureFreshToken();
+    for (const e of checked) {
+      await fetch(`${GRAPH_BASE}/me/messages/${e.msg.id}`, {
+        method: "PATCH",
+        headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+        body: JSON.stringify({ flag: { flagStatus: "flagged" } })
+      });
+    }
+    markThreadDone(idx);
+  } catch(err) {
+    setThreadWorking(idx, "Error — try again");
+  }
+}
+
 function markThreadDone(idx) {
   const group = _threadGroups[idx];
   if (!group) return;
@@ -472,7 +495,7 @@ async function processUnfiled() {
       `${GRAPH_BASE}/me/mailFolders/SentItems/messages` +
       `?$filter=sentDateTime gt ${lastRun}` +
       `&$top=100&$orderby=sentDateTime asc` +
-      `&$select=id,subject,toRecipients,ccRecipients,sentDateTime,from,conversationId`,
+      `&$select=id,subject,toRecipients,ccRecipients,sentDateTime,from,conversationId,flag`,
       { headers: { Authorization: "Bearer " + token } }
     );
     if (!msgsRes.ok) throw new Error("Graph " + msgsRes.status);
@@ -481,7 +504,7 @@ async function processUnfiled() {
     Office.context.roamingSettings.set("sent_last_run", newTimestamp);
     Office.context.roamingSettings.saveAsync(() => {});
 
-    const nonCalendar = messages.filter(m => !isCalendarMessage(m.subject || ""));
+    const nonCalendar = messages.filter(m => !isCalendarMessage(m.subject || "") && (m.flag?.flagStatus || "notFlagged") === "notFlagged");
     if (nonCalendar.length === 0) {
       statusEl.textContent = "No new sent emails to process.";
       btn.disabled = false;
@@ -532,14 +555,14 @@ async function fileInbox() {
     const token = await ensureFreshToken();
     const msgsRes = await fetch(
       `${GRAPH_BASE}/me/mailFolders/Inbox/messages` +
-      `?$select=id,subject,from,toRecipients,ccRecipients,receivedDateTime,conversationId` +
+      `?$select=id,subject,from,toRecipients,ccRecipients,receivedDateTime,conversationId,flag` +
       `&$top=100&$orderby=receivedDateTime desc`,
       { headers: { Authorization: "Bearer " + token } }
     );
     if (!msgsRes.ok) throw new Error("Graph " + msgsRes.status);
     const messages = (await msgsRes.json()).value || [];
 
-    const nonCalendar = messages.filter(m => !isCalendarMessage(m.subject || ""));
+    const nonCalendar = messages.filter(m => !isCalendarMessage(m.subject || "") && (m.flag?.flagStatus || "notFlagged") === "notFlagged");
     if (nonCalendar.length === 0) {
       statusEl.textContent = "Inbox is empty.";
       btn.disabled = false;
