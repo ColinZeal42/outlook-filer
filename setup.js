@@ -216,6 +216,8 @@ function groupByThread(messages, folders) {
     const hits = Object.values(counts);
     const best = hits.length ? hits.reduce((a, b) => b.n > a.n ? b : a).folder : null;
 
+    const isInternal = group.emails.every(e => !hasExternalRecipient(recipientAddresses(e.msg), USER_DOMAIN));
+
     return {
       conversationId: cid,
       subject: group.subject,
@@ -224,7 +226,8 @@ function groupByThread(messages, folders) {
       manualMatch: null,
       expanded: false,
       done: false,
-      latestDate: group.latestDate
+      latestDate: group.latestDate,
+      isInternal
     };
   }).sort((a, b) => b.latestDate - a.latestDate);
 }
@@ -284,7 +287,7 @@ function renderThreadList() {
         html += '</div></label></div>';
       });
 
-      if (!group.match) {
+      if (!group.match && !group.isInternal) {
         html += '<select class="tl-folder-select" onchange="onFolderPick(' + idx + ', this.value)">';
         html += '<option value="">Choose folder…</option>';
         _threadFolders.forEach(f => {
@@ -308,11 +311,13 @@ function buildActionButtons(idx) {
   const group = _threadGroups[idx];
   const checkedCount = group.emails.filter(e => e.checked).length;
   const folder = group.match || group.manualMatch;
-  const fileOff = (!folder || checkedCount === 0) ? " disabled" : "";
   const delOff  = checkedCount === 0 ? " disabled" : "";
   const flagOff = checkedCount === 0 ? " disabled" : "";
   const n = checkedCount > 0 ? " (" + checkedCount + ")" : "";
-  return '<button class="tl-btn tl-file"'   + fileOff + ' onclick="fileThread('   + idx + ')">File'   + n + '</button>' +
+  const fileBtn = group.isInternal ? "" :
+    '<button class="tl-btn tl-file"' + ((!folder || checkedCount === 0) ? " disabled" : "") +
+    ' onclick="fileThread(' + idx + ')">File' + n + '</button>';
+  return fileBtn +
          '<button class="tl-btn tl-delete"' + delOff  + ' onclick="deleteThread(' + idx + ')">Delete' + n + '</button>' +
          '<button class="tl-btn tl-flag"'   + flagOff + ' onclick="flagThread('   + idx + ')">Flag'   + n + '</button>' +
          '<button class="tl-btn tl-skip" onclick="skipThread(' + idx + ')">Skip</button>';
@@ -504,7 +509,11 @@ async function processUnfiled() {
     Office.context.roamingSettings.set("sent_last_run", newTimestamp);
     Office.context.roamingSettings.saveAsync(() => {});
 
-    const nonCalendar = messages.filter(m => !isCalendarMessage(m.subject || "") && (m.flag?.flagStatus || "notFlagged") === "notFlagged");
+    const nonCalendar = messages.filter(m =>
+      !isCalendarMessage(m.subject || "") &&
+      (m.flag?.flagStatus || "notFlagged") === "notFlagged" &&
+      hasExternalRecipient(recipientAddresses(m), USER_DOMAIN)
+    );
     if (nonCalendar.length === 0) {
       statusEl.textContent = "No new sent emails to process.";
       btn.disabled = false;
@@ -687,6 +696,12 @@ const CALENDAR_PREFIXES = ["accepted:", "declined:", "tentative:", "cancelled:",
 
 function isCalendarMessage(subject) {
   return CALENDAR_PREFIXES.some(p => subject.toLowerCase().indexOf(p) === 0);
+}
+
+function recipientAddresses(msg) {
+  return [...(msg.toRecipients || []), ...(msg.ccRecipients || [])]
+    .map(r => r.emailAddress && r.emailAddress.address)
+    .filter(Boolean);
 }
 
 function hasExternalRecipient(emails, domain) {
