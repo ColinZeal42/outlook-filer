@@ -7,7 +7,7 @@
   xsi:type="MailApp">
 
   <Id>c41a2c93-abb6-4276-8f11-a47e71353c65</Id>
-  <Version>3.0.8.0</Version>
+  <Version>3.0.9.0</Version>
   <ProviderName>HMF</ProviderName>
   <DefaultLocale>en-US</DefaultLocale>
   <DisplayName DefaultValue="HMF Email Filer"/>
@@ -79,8 +79,8 @@
                     </Action>
                   </Control>
                 </Group>
-                <Group id="hmfFilingGroup">
-                  <Label resid="FilingGroupLabel"/>
+                <Group id="hmfFileSentGroup">
+                  <Label resid="FileSentLabel"/>
                   <Control xsi:type="Button" id="hmfFileSentBtn">
                     <Label resid="FileSentLabel"/>
                     <Supertip>
@@ -88,14 +88,17 @@
                       <Description resid="FileSentDesc"/>
                     </Supertip>
                     <Icon>
-                      <bt:Image size="16" resid="Icon16"/>
-                      <bt:Image size="32" resid="Icon32"/>
-                      <bt:Image size="80" resid="Icon80"/>
+                      <bt:Image size="16" resid="SentIcon16"/>
+                      <bt:Image size="32" resid="SentIcon32"/>
+                      <bt:Image size="80" resid="SentIcon80"/>
                     </Icon>
                     <Action xsi:type="ShowTaskpane">
                       <SourceLocation resid="FileSentUrl"/>
                     </Action>
                   </Control>
+                </Group>
+                <Group id="hmfFileInboxGroup">
+                  <Label resid="FileInboxLabel"/>
                   <Control xsi:type="Button" id="hmfFileInboxBtn">
                     <Label resid="FileInboxLabel"/>
                     <Supertip>
@@ -103,9 +106,9 @@
                       <Description resid="FileInboxDesc"/>
                     </Supertip>
                     <Icon>
-                      <bt:Image size="16" resid="Icon16"/>
-                      <bt:Image size="32" resid="Icon32"/>
-                      <bt:Image size="80" resid="Icon80"/>
+                      <bt:Image size="16" resid="InboxIcon16"/>
+                      <bt:Image size="32" resid="InboxIcon32"/>
+                      <bt:Image size="80" resid="InboxIcon80"/>
                     </Icon>
                     <Action xsi:type="ShowTaskpane">
                       <SourceLocation resid="FileInboxUrl"/>
@@ -124,6 +127,12 @@
           <bt:Image id="Icon16" DefaultValue="https://ColinZeal42.github.io/outlook-filer/assets/icon-64.png"/>
           <bt:Image id="Icon32" DefaultValue="https://ColinZeal42.github.io/outlook-filer/assets/icon-64.png"/>
           <bt:Image id="Icon80" DefaultValue="https://ColinZeal42.github.io/outlook-filer/assets/icon-128.png"/>
+          <bt:Image id="SentIcon16" DefaultValue="https://ColinZeal42.github.io/outlook-filer/assets/icon-sent-16.png"/>
+          <bt:Image id="SentIcon32" DefaultValue="https://ColinZeal42.github.io/outlook-filer/assets/icon-sent-32.png"/>
+          <bt:Image id="SentIcon80" DefaultValue="https://ColinZeal42.github.io/outlook-filer/assets/icon-sent-80.png"/>
+          <bt:Image id="InboxIcon16" DefaultValue="https://ColinZeal42.github.io/outlook-filer/assets/icon-inbox-16.png"/>
+          <bt:Image id="InboxIcon32" DefaultValue="https://ColinZeal42.github.io/outlook-filer/assets/icon-inbox-32.png"/>
+          <bt:Image id="InboxIcon80" DefaultValue="https://ColinZeal42.github.io/outlook-filer/assets/icon-inbox-80.png"/>
         </bt:Images>
         <bt:Urls>
           <bt:Url id="Commands.Html" DefaultValue="https://ColinZeal42.github.io/outlook-filer/commands.html?v=20"/>
