@@ -7,6 +7,7 @@ const USER_DOMAIN = "hmflaw.com";
 let _pendingMode = null;
 let _threadGroups = [];
 let _threadFolders = [];
+let _mode = "inbox"; // "inbox" | "sent"
 
 Office.onReady(async () => {
   document.getElementById("connectBtn").addEventListener("click", signIn);
@@ -246,9 +247,10 @@ function groupByThread(messages, folders) {
 
 // --- Thread list UI ---
 
-function initThreadList(groups, folders) {
+function initThreadList(groups, folders, mode) {
   _threadGroups = groups;
   _threadFolders = folders;
+  _mode = mode || "inbox";
   const el = document.getElementById("thread-list");
   el.style.display = "block";
   renderThreadList();
@@ -333,7 +335,9 @@ function buildActionButtons(idx) {
 
   const armedLabel = '<span class="tl-armed-label">↩ Reply opened — send reply, then confirm:</span>';
   let fileSection = "";
-  if (!group.isInternal) {
+  if (_mode === "sent") {
+    fileSection = '<button class="tl-btn tl-file"' + fileOff + ' onclick="fileThread(' + idx + ')">File' + n + '</button>';
+  } else if (!group.isInternal) {
     fileSection = group.armed
       ? armedLabel + '<button class="tl-btn tl-confirm-file"' + fileOff + ' onclick="fileThread(' + idx + ')">Confirm File' + n + '</button>'
       : '<button class="tl-btn tl-file"' + fileOff + ' onclick="fileThread(' + idx + ')">File' + n + '</button>' +
@@ -344,9 +348,12 @@ function buildActionButtons(idx) {
       : '<button class="tl-btn tl-reply-delete"' + delOff + ' onclick="replyAndFile(' + idx + ')">Reply & Delete</button>';
   }
 
-  return fileSection +
-    '<button class="tl-btn tl-delete"' + delOff  + ' onclick="deleteThread(' + idx + ')">Delete' + n + '</button>' +
-    '<button class="tl-btn tl-flag"'   + flagOff + ' onclick="flagThread('   + idx + ')">Flag'   + n + '</button>' +
+  const deleteBtn = _mode === "sent" ? "" :
+    '<button class="tl-btn tl-delete"' + delOff + ' onclick="deleteThread(' + idx + ')">Delete' + n + '</button>';
+  const flagBtn = _mode === "sent" ? "" :
+    '<button class="tl-btn tl-flag"' + flagOff + ' onclick="flagThread(' + idx + ')">Flag' + n + '</button>';
+
+  return fileSection + deleteBtn + flagBtn +
     '<button class="tl-btn tl-skip" onclick="skipThread(' + idx + ')">Skip</button>';
 }
 
@@ -576,7 +583,7 @@ async function processUnfiled() {
     const folders = parseFolders(foldersJson);
     const groups = groupByThread(nonCalendar, folders);
     statusEl.textContent = `${groups.length} thread${groups.length !== 1 ? "s" : ""} to review:`;
-    initThreadList(groups, folders);
+    initThreadList(groups, folders, "sent");
   } catch(e) {
     statusEl.textContent = "Error: " + e.message;
   }
