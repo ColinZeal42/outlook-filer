@@ -16,10 +16,14 @@ function _launchDialog(mode, event) {
   const sentLastRun = Office.context.roamingSettings.get("sent_last_run");
   if (sentLastRun) localStorage.setItem("hmf_sent_last_run", sentLastRun);
 
-  const dialogUrl = new URL("dialog.html", location.href).href;
+  const dialogUrl = "https://ColinZeal42.github.io/outlook-filer/dialog.html";
   Office.context.ui.displayDialogAsync(dialogUrl, { width: 70, height: 80, displayInIframe: false },
     result => {
       if (result.status !== Office.AsyncResultStatus.Succeeded) {
+        Office.context.mailbox.item.notificationMessages.addAsync("hmf-err", {
+          type: "errorMessage",
+          message: "Could not open filer: " + result.error.message
+        });
         event.completed();
         return;
       }
