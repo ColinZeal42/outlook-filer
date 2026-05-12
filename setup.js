@@ -222,8 +222,7 @@ function groupByThread(messages, folders) {
       }
     }
     const hits = Object.values(counts);
-    const best = hits.length === 1 ? hits[0].folder : null;
-    const conflicts = hits.length > 1 ? hits.map(h => h.folder) : [];
+    const best = hits.length ? hits.reduce((a, b) => b.n > a.n ? b : a).folder : null;
 
     const isInternal = group.emails.every(e => {
       const fromAddr = (e.msg.from && e.msg.from.emailAddress && e.msg.from.emailAddress.address) || "";
@@ -235,9 +234,8 @@ function groupByThread(messages, folders) {
       subject: group.subject,
       emails: group.emails,
       match: best,
-      conflicts,
       manualMatch: null,
-      showPicker: false,
+      armed: false,
       expanded: false,
       done: false,
       latestDate: group.latestDate,
@@ -264,15 +262,12 @@ function renderThreadList() {
   _threadGroups.forEach((group, idx) => {
     const doneClass = group.done ? " tl-done" : "";
     const subject = esc(group.subject || "(no subject)");
+    const effectiveFolder = group.manualMatch || group.match;
     const matchHtml = group.isInternal
       ? '<span class="tl-match tl-internal">Internal</span>'
-      : group.manualMatch
-        ? '<span class="tl-match">→ ' + esc(group.manualMatch.displayName) + '</span>'
-        : group.conflicts.length
-          ? '<span class="tl-match tl-conflict">⚠ ' + group.conflicts.length + ' matches</span>'
-          : group.match
-            ? '<span class="tl-match">→ ' + esc(group.match.displayName) + '</span>'
-            : '<span class="tl-match tl-no-match">(no match)</span>';
+      : effectiveFolder
+        ? '<span class="tl-match">→ ' + esc(effectiveFolder.displayName) + '</span>'
+        : '<span class="tl-match tl-no-match">(no match)</span>';
     const chevron = group.expanded ? "▲" : "▼";
     const headerAttrs = group.done ? "" : ' onclick="toggleThread(' + idx + ')" style="cursor:pointer"';
 
@@ -308,23 +303,13 @@ function renderThreadList() {
       });
 
       if (!group.isInternal) {
-        if (group.conflicts.length && !group.manualMatch) {
-          html += '<div class="tl-conflict-label">Multiple matches — choose one:</div>';
-          html += '<div class="tl-conflict-chips">';
-          group.conflicts.forEach(f => {
-            html += '<button class="tl-btn tl-conflict-chip" onclick="onFolderPick(' + idx + ',\'' + esc(f.id) + '\')">' + esc(f.displayName) + '</button>';
-          });
-          html += '</div>';
-        }
-        if (!group.match && !group.conflicts.length || group.showPicker) {
-          html += '<select class="tl-folder-select" onchange="onFolderPick(' + idx + ', this.value)">';
-          html += '<option value="">Choose folder…</option>';
-          _threadFolders.forEach(f => {
-            const sel = (group.manualMatch && group.manualMatch.id === f.id) ? " selected" : "";
-            html += '<option value="' + esc(f.id) + '"' + sel + '>' + esc(f.displayName) + '</option>';
-          });
-          html += '</select>';
-        }
+        const selectedId = (group.manualMatch || group.match || {}).id || "";
+        html += '<select class="tl-folder-select" onchange="onFolderPick(' + idx + ', this.value)">';
+        html += '<option value=""' + (!selectedId ? ' selected' : '') + '>Choose folder…</option>';
+        _threadFolders.forEach(f => {
+          html += '<option value="' + esc(f.id) + '"' + (f.id === selectedId ? ' selected' : '') + '>' + esc(f.displayName) + '</option>';
+        });
+        html += '</select>';
       }
 
       html += '<div class="tl-actions" id="tl-actions-' + idx + '">' + buildActionButtons(idx) + '</div>';
@@ -341,19 +326,28 @@ function buildActionButtons(idx) {
   const group = _threadGroups[idx];
   const checkedCount = group.emails.filter(e => e.checked).length;
   const folder = group.manualMatch || group.match;
+  const fileOff = (!folder || checkedCount === 0) ? " disabled" : "";
   const delOff  = checkedCount === 0 ? " disabled" : "";
   const flagOff = checkedCount === 0 ? " disabled" : "";
   const n = checkedCount > 0 ? " (" + checkedCount + ")" : "";
-  const fileBtn = group.isInternal ? "" :
-    '<button class="tl-btn tl-file"' + ((!folder || checkedCount === 0) ? " disabled" : "") +
-    ' onclick="fileThread(' + idx + ')">File' + n + '</button>';
-  const otherBtn = group.isInternal ? "" :
-    '<button class="tl-btn tl-other" onclick="toggleOtherPicker(' + idx + ')">' + (group.showPicker ? 'Cancel' : 'Other') + '</button>';
-  return fileBtn +
-         '<button class="tl-btn tl-delete"' + delOff  + ' onclick="deleteThread(' + idx + ')">Delete' + n + '</button>' +
-         '<button class="tl-btn tl-flag"'   + flagOff + ' onclick="flagThread('   + idx + ')">Flag'   + n + '</button>' +
-         otherBtn +
-         '<button class="tl-btn tl-skip" onclick="skipThread(' + idx + ')">Skip</button>';
+
+  let fileSection = "";
+  if (!group.isInternal) {
+    if (group.armed) {
+      fileSection =
+        '<span class="tl-armed-label">↩ Reply opened — send reply, then confirm:</span>' +
+        '<button class="tl-btn tl-confirm-file"' + fileOff + ' onclick="fileThread(' + idx + ')">Confirm File' + n + '</button>';
+    } else {
+      fileSection =
+        '<button class="tl-btn tl-file"' + fileOff + ' onclick="fileThread(' + idx + ')">File' + n + '</button>' +
+        '<button class="tl-btn tl-reply-file"' + fileOff + ' onclick="replyAndFile(' + idx + ')">Reply & File</button>';
+    }
+  }
+
+  return fileSection +
+    '<button class="tl-btn tl-delete"' + delOff  + ' onclick="deleteThread(' + idx + ')">Delete' + n + '</button>' +
+    '<button class="tl-btn tl-flag"'   + flagOff + ' onclick="flagThread('   + idx + ')">Flag'   + n + '</button>' +
+    '<button class="tl-btn tl-skip" onclick="skipThread(' + idx + ')">Skip</button>';
 }
 
 function toggleThread(idx) {
@@ -379,7 +373,7 @@ async function loadThreadBodies(group) {
     e.isReplied = details.isReplied;
     e.isForwarded = details.isForwarded;
   }));
-  if (!group.match && !group.conflicts.length) {
+  if (!group.match) {
     const counts = {};
     for (const e of group.emails) {
       const allRecip = [...(e.msg.toRecipients||[]), ...(e.msg.ccRecipients||[])];
@@ -390,8 +384,7 @@ async function loadThreadBodies(group) {
       if (m) { if (!counts[m.id]) counts[m.id] = { folder: m, n: 0 }; counts[m.id].n++; }
     }
     const entries = Object.values(counts);
-    if (entries.length === 1) group.match = entries[0].folder;
-    else if (entries.length > 1) group.conflicts = entries.map(h => h.folder);
+    if (entries.length) group.match = entries.reduce((a, b) => b.n > a.n ? b : a).folder;
   }
   if (group.expanded && !group.done) renderThreadList();
 }
@@ -407,18 +400,10 @@ function onCheckChange(idx) {
   if (actionsEl) actionsEl.innerHTML = buildActionButtons(idx);
 }
 
-function toggleOtherPicker(idx) {
-  const group = _threadGroups[idx];
-  if (!group) return;
-  group.showPicker = !group.showPicker;
-  renderThreadList();
-}
-
 function onFolderPick(idx, folderId) {
   const group = _threadGroups[idx];
   if (!group) return;
   group.manualMatch = folderId ? (_threadFolders.find(f => f.id === folderId) || null) : null;
-  group.showPicker = false;
   renderThreadList();
 }
 
@@ -430,7 +415,7 @@ function setThreadWorking(idx, msg) {
 async function fileThread(idx) {
   const group = _threadGroups[idx];
   if (!group) return;
-  const folder = group.match || group.manualMatch;
+  const folder = group.manualMatch || group.match;
   if (!folder) return;
   const checked = group.emails.filter(e => e.checked);
   if (!checked.length) return;
@@ -461,6 +446,20 @@ async function deleteThread(idx) {
 
 function skipThread(idx) {
   markThreadDone(idx);
+}
+
+function replyAndFile(idx) {
+  const group = _threadGroups[idx];
+  if (!group) return;
+  const latest = group.emails.slice().sort((a, b) => {
+    return new Date(b.msg.sentDateTime || b.msg.receivedDateTime || 0) -
+           new Date(a.msg.sentDateTime || a.msg.receivedDateTime || 0);
+  })[0];
+  if (!latest) return;
+  const ewsId = Office.context.mailbox.convertToEwsId(latest.msg.id, Office.MailboxEnums.RestVersion.v2_0);
+  Office.context.mailbox.displayMessageForm(ewsId);
+  group.armed = true;
+  renderThreadList();
 }
 
 async function flagThread(idx) {
