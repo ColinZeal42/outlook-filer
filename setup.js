@@ -459,7 +459,7 @@ async function replyAndFile(idx) {
   setThreadWorking(idx, "Opening reply…");
   try {
     const token = await ensureFreshToken();
-    const res = await fetch(`${GRAPH_BASE}/me/messages/${latest.msg.id}/createReply`, {
+    const res = await fetch(`${GRAPH_BASE}/me/messages/${latest.msg.id}/createReplyAll`, {
       method: "POST",
       headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
       body: JSON.stringify({})
