@@ -448,18 +448,31 @@ function skipThread(idx) {
   markThreadDone(idx);
 }
 
-function replyAndFile(idx) {
+async function replyAndFile(idx) {
   const group = _threadGroups[idx];
   if (!group) return;
-  const latest = group.emails.slice().sort((a, b) => {
-    return new Date(b.msg.sentDateTime || b.msg.receivedDateTime || 0) -
-           new Date(a.msg.sentDateTime || a.msg.receivedDateTime || 0);
-  })[0];
+  const latest = group.emails.slice().sort((a, b) =>
+    new Date(b.msg.sentDateTime || b.msg.receivedDateTime || 0) -
+    new Date(a.msg.sentDateTime || a.msg.receivedDateTime || 0)
+  )[0];
   if (!latest) return;
-  const ewsId = Office.context.mailbox.convertToEwsId(latest.msg.id, Office.MailboxEnums.RestVersion.v2_0);
-  Office.context.mailbox.displayMessageForm(ewsId);
-  group.armed = true;
-  renderThreadList();
+  setThreadWorking(idx, "Opening reply…");
+  try {
+    const token = await ensureFreshToken();
+    const res = await fetch(`${GRAPH_BASE}/me/messages/${latest.msg.id}/createReply`, {
+      method: "POST",
+      headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+      body: JSON.stringify({})
+    });
+    if (!res.ok) throw new Error("Graph " + res.status);
+    const draft = await res.json();
+    const ewsId = Office.context.mailbox.convertToEwsId(draft.id, Office.MailboxEnums.RestVersion.v2_0);
+    Office.context.mailbox.displayMessageForm(ewsId);
+    group.armed = true;
+    renderThreadList();
+  } catch(err) {
+    setThreadWorking(idx, "Could not open reply — try again");
+  }
 }
 
 async function flagThread(idx) {
