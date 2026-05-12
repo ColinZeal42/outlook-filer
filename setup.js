@@ -329,14 +329,29 @@ function toggleThread(idx) {
 async function loadThreadBodies(group) {
   const token = await ensureFreshToken().catch(() => null);
   if (!token) return;
+  const rawBodies = {};
   await Promise.all(group.emails.map(async e => {
     if (e.body !== null) return;
     const details = await fetchEmailDetails(token, e.msg.id)
       .catch(() => ({ body: null, isReplied: false, isForwarded: false }));
+    rawBodies[e.msg.id] = details.body || "";
     e.body = extractPreviewLines(details.body, 5) || "(no preview)";
     e.isReplied = details.isReplied;
     e.isForwarded = details.isForwarded;
   }));
+  if (!group.match) {
+    const counts = {};
+    for (const e of group.emails) {
+      const allRecip = [...(e.msg.toRecipients||[]), ...(e.msg.ccRecipients||[])];
+      const fromAddr = e.msg.from?.emailAddress?.address || "";
+      const fromName = e.msg.from?.emailAddress?.name || "";
+      const pt = [fromName, fromAddr, ...allRecip.map(r => (r.emailAddress?.name||"") + " " + (r.emailAddress?.address||""))].join(" ");
+      const m = matchFolder({ subject: e.msg.subject || "", participantText: pt, bodyText: rawBodies[e.msg.id] || "" }, _threadFolders);
+      if (m) { if (!counts[m.id]) counts[m.id] = { folder: m, n: 0 }; counts[m.id].n++; }
+    }
+    const entries = Object.values(counts);
+    if (entries.length) group.match = entries.reduce((a, b) => b.n > a.n ? b : a).folder;
+  }
   if (group.expanded && !group.done) renderThreadList();
 }
 
@@ -656,7 +671,7 @@ function hasExternalRecipient(emails, domain) {
 }
 
 function matchFolder(email, folders) {
-  const texts = [email.subject, email.participantText];
+  const texts = [email.subject, email.participantText, email.bodyText || ""].filter(Boolean);
   for (let t = 0; t < texts.length; t++) {
     const lower = texts[t].toLowerCase();
     for (let f = 0; f < folders.length; f++) {
