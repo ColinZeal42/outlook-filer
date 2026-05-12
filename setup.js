@@ -280,7 +280,7 @@ function renderThreadList() {
         html += '<input type="checkbox" id="chk-' + esc(e.msg.id) + '"' + checked + ' onchange="onCheckChange(' + idx + ')">';
         html += '<div class="tl-email-content">';
         html += '<div class="tl-email-meta">' + badge + sender + ' <span class="tl-email-date">· ' + dateStr + '</span></div>';
-        html += '<div class="tl-email-body">' + bodyHtml + '</div>';
+        html += '<div class="tl-email-body" onclick="event.preventDefault();openEmail(\'' + esc(e.msg.id) + '\')">' + bodyHtml + '</div>';
         html += '</div></label></div>';
       });
 
@@ -705,6 +705,11 @@ function matchFolder(email, folders) {
     }
   }
   return null;
+}
+
+function openEmail(restId) {
+  const ewsId = Office.context.mailbox.convertToEwsId(restId, Office.MailboxEnums.RestVersion.v2_0);
+  Office.context.mailbox.displayMessageForm(ewsId);
 }
 
 function formatDate(dateStr) {
