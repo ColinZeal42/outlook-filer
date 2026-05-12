@@ -5,8 +5,8 @@ const GRAPH_BASE = "https://graph.microsoft.com/v1.0";
 const USER_DOMAIN = "hmflaw.com";
 
 let _pendingMode = null;
-let _emailQueue = []; // [{msg, match, opts, done, body, isReplied, isForwarded}]
-let _emailIndex = 0;
+let _threadGroups = [];
+let _threadFolders = [];
 
 Office.onReady(async () => {
   document.getElementById("connectBtn").addEventListener("click", signIn);
@@ -15,10 +15,7 @@ Office.onReady(async () => {
   document.getElementById("setBaselineBtn").addEventListener("click", setBaseline);
   document.getElementById("fileInboxBtn").addEventListener("click", fileInbox);
   document.getElementById("ver").textContent = typeof SETUP_VERSION !== "undefined" ? SETUP_VERSION : "?";
-  wireCardButtons();
 
-  // SETUP_MODE is set as a global by the mode-specific HTML files (setup-unsent.html etc.)
-  // Fall back to URL param for direct loads of setup.html
   const mode = (typeof window.SETUP_MODE !== "undefined" ? window.SETUP_MODE : null)
     || new URLSearchParams(window.location.search).get("mode");
 
@@ -81,7 +78,6 @@ async function moveMessage(token, msgId, destinationId) {
   if (!res.ok) throw new Error("Move failed: " + res.status);
 }
 
-// Fetches body (plain text) + replied/forwarded status in one Graph call.
 async function fetchEmailDetails(token, msgId) {
   try {
     const res = await fetch(
@@ -107,7 +103,7 @@ async function fetchEmailDetails(token, msgId) {
   }
 }
 
-// --- Body / ID helpers ---
+// --- Helpers ---
 
 function extractPreviewLines(text, maxLines) {
   if (!text) return "";
@@ -128,203 +124,238 @@ function extractPreviewLines(text, maxLines) {
   return result.join("\n").trim();
 }
 
-function convertToRestIdAsync(ewsId) {
-  return new Promise(resolve => {
-    Office.context.mailbox.convertToRestId(ewsId, Office.MailboxEnums.RestVersion.v2_0, resolve);
+function esc(s) {
+  return String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+// --- Thread grouping ---
+
+function groupByThread(messages, folders) {
+  const map = {};
+  const order = [];
+  for (const msg of messages) {
+    const cid = msg.conversationId || msg.id;
+    if (!map[cid]) {
+      map[cid] = { conversationId: cid, subject: msg.subject || "", emails: [], latestDate: 0 };
+      order.push(cid);
+    }
+    const d = new Date(msg.sentDateTime || msg.receivedDateTime || 0).getTime();
+    if (d > map[cid].latestDate) {
+      map[cid].latestDate = d;
+      map[cid].subject = msg.subject || map[cid].subject;
+    }
+    map[cid].emails.push({ msg, checked: true, body: null, isReplied: undefined, isForwarded: undefined });
+  }
+
+  return order.map(cid => {
+    const group = map[cid];
+    const counts = {};
+    for (const e of group.emails) {
+      const allRecip = [...(e.msg.toRecipients || []), ...(e.msg.ccRecipients || [])];
+      const ea = (e.msg.from && e.msg.from.emailAddress) || {};
+      const pt = [ea.name || "", ea.address || "",
+        ...allRecip.map(r => { const a = r.emailAddress || {}; return (a.name || "") + " " + (a.address || ""); })
+      ].join(" ");
+      const m = matchFolder({ subject: e.msg.subject || "", participantText: pt }, folders);
+      if (m) {
+        if (!counts[m.id]) counts[m.id] = { folder: m, n: 0 };
+        counts[m.id].n++;
+      }
+    }
+    const hits = Object.values(counts);
+    const best = hits.length ? hits.reduce((a, b) => b.n > a.n ? b : a).folder : null;
+
+    return {
+      conversationId: cid,
+      subject: group.subject,
+      emails: group.emails,
+      match: best,
+      manualMatch: null,
+      expanded: false,
+      done: false,
+      latestDate: group.latestDate
+    };
+  }).sort((a, b) => b.latestDate - a.latestDate);
+}
+
+// --- Thread list UI ---
+
+function initThreadList(groups, folders) {
+  _threadGroups = groups;
+  _threadFolders = folders;
+  const el = document.getElementById("thread-list");
+  el.style.display = "block";
+  renderThreadList();
+}
+
+function renderThreadList() {
+  const el = document.getElementById("thread-list");
+  if (!el) return;
+  let html = "";
+
+  _threadGroups.forEach((group, idx) => {
+    const doneClass = group.done ? " tl-done" : "";
+    const subject = esc(group.subject || "(no subject)");
+    const matchHtml = group.match
+      ? '<span class="tl-match">→ ' + esc(group.match.displayName) + '</span>'
+      : '<span class="tl-match tl-no-match">(no match)</span>';
+    const chevron = group.expanded ? "▲" : "▼";
+    const headerAttrs = group.done ? "" : ' onclick="toggleThread(' + idx + ')" style="cursor:pointer"';
+
+    html += '<div class="tl-group' + doneClass + '">';
+    html += '<div class="tl-header"' + headerAttrs + '>';
+    html += '<span class="tl-pill">' + group.emails.length + '</span>';
+    html += '<span class="tl-subject">' + subject + '</span>';
+    html += matchHtml;
+    html += '<span class="tl-chevron">' + chevron + '</span>';
+    html += '</div>';
+
+    if (group.expanded && !group.done) {
+      html += '<div class="tl-body">';
+      group.emails.forEach(e => {
+        const ea = (e.msg.from && e.msg.from.emailAddress) || {};
+        const sender = esc(ea.name || ea.address || "Unknown");
+        const dateStr = esc(formatDate(e.msg.sentDateTime || e.msg.receivedDateTime));
+        const badge = e.isForwarded ? '<span class="tl-badge tl-fwd">↪</span> '
+                    : e.isReplied   ? '<span class="tl-badge">↩</span> '
+                    : '';
+        const bodyHtml = e.body === null
+          ? '<em>Loading…</em>'
+          : esc(e.body || "(no preview)").replace(/\n/g, "<br>");
+        const checked = e.checked ? " checked" : "";
+
+        html += '<div class="tl-email">';
+        html += '<label class="tl-email-label">';
+        html += '<input type="checkbox" id="chk-' + esc(e.msg.id) + '"' + checked + ' onchange="onCheckChange(' + idx + ')">';
+        html += '<div class="tl-email-content">';
+        html += '<div class="tl-email-meta">' + badge + sender + ' <span class="tl-email-date">· ' + dateStr + '</span></div>';
+        html += '<div class="tl-email-body">' + bodyHtml + '</div>';
+        html += '</div></label></div>';
+      });
+
+      if (!group.match) {
+        html += '<select class="tl-folder-select" onchange="onFolderPick(' + idx + ', this.value)">';
+        html += '<option value="">Choose folder…</option>';
+        _threadFolders.forEach(f => {
+          const sel = (group.manualMatch && group.manualMatch.id === f.id) ? " selected" : "";
+          html += '<option value="' + esc(f.id) + '"' + sel + '>' + esc(f.displayName) + '</option>';
+        });
+        html += '</select>';
+      }
+
+      html += '<div class="tl-actions" id="tl-actions-' + idx + '">' + buildActionButtons(idx) + '</div>';
+      html += '</div>';
+    }
+
+    html += '</div>';
   });
+
+  el.innerHTML = html;
 }
 
-function getItemBodyAsync(item) {
-  return new Promise(resolve => {
-    item.body.getAsync(Office.CoercionType.Text, {}, result => {
-      resolve(result.status === Office.AsyncResultStatus.Succeeded ? result.value : null);
-    });
-  });
+function buildActionButtons(idx) {
+  const group = _threadGroups[idx];
+  const checkedCount = group.emails.filter(e => e.checked).length;
+  const folder = group.match || group.manualMatch;
+  const fileOff = (!folder || checkedCount === 0) ? " disabled" : "";
+  const delOff  = checkedCount === 0 ? " disabled" : "";
+  const n = checkedCount > 0 ? " " + checkedCount : "";
+  return '<button class="tl-btn tl-file"'   + fileOff + ' onclick="fileThread('   + idx + ')">File'   + n + '</button>' +
+         '<button class="tl-btn tl-delete"' + delOff  + ' onclick="deleteThread(' + idx + ')">Delete' + n + '</button>' +
+         '<button class="tl-btn tl-skip" onclick="skipThread(' + idx + ')">Skip</button>';
 }
 
-// --- Email card ---
-
-function wireCardButtons() {
-  document.getElementById("prevEmailBtn").onclick = () => {
-    if (_emailIndex > 0) showEmailAt(_emailIndex - 1);
-  };
-  document.getElementById("nextEmailBtn").onclick = () => {
-    if (_emailIndex < _emailQueue.length - 1) showEmailAt(_emailIndex + 1);
-  };
-  document.getElementById("fileItBtn").onclick = () => cardFileIt();
-  document.getElementById("deleteItBtn").onclick = () => cardDelete();
-  document.getElementById("ignoreItBtn").onclick = () => cardIgnore();
+function toggleThread(idx) {
+  const group = _threadGroups[idx];
+  if (!group || group.done) return;
+  const willExpand = !group.expanded;
+  const needsLoad = willExpand && group.emails.some(e => e.body === null);
+  group.expanded = willExpand;
+  renderThreadList();
+  if (needsLoad) loadThreadBodies(group);
 }
 
-function initEmailCard(entries) {
-  _emailQueue = entries.map(e => ({
-    msg: e.msg,
-    match: e.match,
-    opts: e.opts,
-    done: false,
-    body: e.body !== undefined ? e.body : null,
-    isReplied: e.isReplied,
-    isForwarded: e.isForwarded
+async function loadThreadBodies(group) {
+  const token = Office.context.roamingSettings.get("access_token");
+  await Promise.all(group.emails.map(async e => {
+    if (e.body !== null) return;
+    const details = await fetchEmailDetails(token, e.msg.id)
+      .catch(() => ({ body: null, isReplied: false, isForwarded: false }));
+    e.body = extractPreviewLines(details.body, 5) || "(no preview)";
+    e.isReplied = details.isReplied;
+    e.isForwarded = details.isForwarded;
   }));
-  _emailIndex = 0;
-  document.getElementById("email-card").style.display = "block";
-  showEmailAt(0);
+  if (group.expanded && !group.done) renderThreadList();
 }
 
-async function showEmailAt(index) {
-  _emailIndex = index;
-  const total = _emailQueue.length;
-  const entry = _emailQueue[index];
-
-  document.getElementById("email-counter").textContent = `${index + 1} / ${total}`;
-  document.getElementById("prevEmailBtn").disabled = index === 0;
-  document.getElementById("nextEmailBtn").disabled = index === total - 1;
-
-  document.getElementById("email-subject-text").textContent = entry.msg.subject || "(no subject)";
-
-  // Reply/forward badge — shown if fetched, hidden while pending
-  const badgeEl = document.getElementById("email-reply-badge");
-  if (entry.isReplied !== undefined) {
-    const show = entry.isReplied || entry.isForwarded;
-    badgeEl.style.display = show ? "block" : "none";
-    badgeEl.textContent = entry.isForwarded ? "↪ Forwarded" : "↩ Replied";
-  } else {
-    badgeEl.style.display = "none";
-  }
-
-  const line1 = [entry.opts.senderLabel, entry.opts.dateStr].filter(Boolean).join("  •  ");
-  const line2 = entry.opts.toLabel || "";
-  const line3 = entry.opts.ccLabel || "";
-  document.getElementById("email-meta").textContent = [line1, line2, line3].filter(Boolean).join("\n");
-
-  const matchEl = document.getElementById("email-match-line");
-  if (entry.match) {
-    matchEl.textContent = "→ " + entry.match.displayName;
-    matchEl.className = "";
-  } else if (entry.opts.isInternal) {
-    matchEl.textContent = "Internal email — no filing";
-    matchEl.className = "no-match";
-  } else {
-    matchEl.textContent = "No case folder match";
-    matchEl.className = "no-match";
-  }
-
-  const fileBtn = document.getElementById("fileItBtn");
-  fileBtn.style.display = entry.match ? "inline-block" : "none";
-  fileBtn.textContent = "File It";
-  document.getElementById("deleteItBtn").textContent = "Delete";
-  document.getElementById("ignoreItBtn").textContent = "Ignore";
-
-  if (entry.done) {
-    disableCardBtns();
-  } else {
-    if (entry.match) fileBtn.disabled = false;
-    document.getElementById("deleteItBtn").disabled = false;
-    document.getElementById("ignoreItBtn").disabled = false;
-  }
-
-  // Body + reply status — lazy-load from Graph if not yet fetched
-  const bodyEl = document.getElementById("email-body");
-  if (entry.body !== null) {
-    bodyEl.textContent = entry.body || "(no preview)";
-  } else {
-    bodyEl.textContent = "Loading preview…";
-    const token = Office.context.roamingSettings.get("access_token");
-    const details = await fetchEmailDetails(token, entry.msg.id);
-    entry.body = extractPreviewLines(details.body, 10) || "(no preview)";
-    entry.isReplied = details.isReplied;
-    entry.isForwarded = details.isForwarded;
-    if (_emailIndex === index) {
-      bodyEl.textContent = entry.body;
-      const show = details.isReplied || details.isForwarded;
-      badgeEl.style.display = show ? "block" : "none";
-      badgeEl.textContent = details.isForwarded ? "↪ Forwarded" : "↩ Replied";
-    }
-  }
-}
-
-function disableCardBtns() {
-  ["fileItBtn", "deleteItBtn", "ignoreItBtn"].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.disabled = true;
+function onCheckChange(idx) {
+  const group = _threadGroups[idx];
+  if (!group) return;
+  group.emails.forEach(e => {
+    const chk = document.getElementById("chk-" + e.msg.id);
+    if (chk) e.checked = chk.checked;
   });
+  const actionsEl = document.getElementById("tl-actions-" + idx);
+  if (actionsEl) actionsEl.innerHTML = buildActionButtons(idx);
 }
 
-function enableCardBtns() {
-  const entry = _emailQueue[_emailIndex];
-  if (!entry || entry.done) return;
-  if (entry.match) document.getElementById("fileItBtn").disabled = false;
-  document.getElementById("deleteItBtn").disabled = false;
-  document.getElementById("ignoreItBtn").disabled = false;
+function onFolderPick(idx, folderId) {
+  const group = _threadGroups[idx];
+  if (!group) return;
+  group.manualMatch = folderId ? (_threadFolders.find(f => f.id === folderId) || null) : null;
+  const actionsEl = document.getElementById("tl-actions-" + idx);
+  if (actionsEl) actionsEl.innerHTML = buildActionButtons(idx);
 }
 
-function autoAdvance() {
-  setTimeout(() => {
-    let next = -1;
-    for (let i = _emailIndex + 1; i < _emailQueue.length; i++) {
-      if (!_emailQueue[i].done) { next = i; break; }
-    }
-    if (next !== -1) {
-      showEmailAt(next);
-    } else if (_emailQueue.filter(e => !e.done).length === 0) {
-      document.getElementById("queue-status").textContent = "All done ✓";
-    }
-  }, 700);
+function setThreadWorking(idx, msg) {
+  const actionsEl = document.getElementById("tl-actions-" + idx);
+  if (actionsEl) actionsEl.innerHTML = '<span class="tl-working">' + esc(msg) + '</span>';
 }
 
-async function cardFileIt() {
-  const entry = _emailQueue[_emailIndex];
-  if (!entry || !entry.match || entry.done) return;
+async function fileThread(idx) {
+  const group = _threadGroups[idx];
+  if (!group) return;
+  const folder = group.match || group.manualMatch;
+  if (!folder) return;
+  const checked = group.emails.filter(e => e.checked);
+  if (!checked.length) return;
   const token = Office.context.roamingSettings.get("access_token");
-  disableCardBtns();
-  document.getElementById("fileItBtn").textContent = "Filing…";
+  setThreadWorking(idx, "Filing…");
   try {
-    await moveMessage(token, entry.msg.id, entry.match.id);
-    entry.done = true;
-    document.getElementById("fileItBtn").textContent = "Filed ✓";
-    autoAdvance();
-  } catch(e) {
-    document.getElementById("fileItBtn").textContent = "Error";
-    enableCardBtns();
+    await Promise.all(checked.map(e => moveMessage(token, e.msg.id, folder.id)));
+    markThreadDone(idx);
+  } catch(err) {
+    setThreadWorking(idx, "Error — try again");
   }
 }
 
-async function cardDelete() {
-  const entry = _emailQueue[_emailIndex];
-  if (!entry || entry.done) return;
+async function deleteThread(idx) {
+  const group = _threadGroups[idx];
+  if (!group) return;
+  const checked = group.emails.filter(e => e.checked);
+  if (!checked.length) return;
   const token = Office.context.roamingSettings.get("access_token");
-  disableCardBtns();
-  document.getElementById("deleteItBtn").textContent = "Deleting…";
+  setThreadWorking(idx, "Deleting…");
   try {
-    await moveMessage(token, entry.msg.id, "deleteditems");
-    entry.done = true;
-    document.getElementById("deleteItBtn").textContent = "Deleted ✓";
-    autoAdvance();
-  } catch(e) {
-    document.getElementById("deleteItBtn").textContent = "Error";
-    enableCardBtns();
+    await Promise.all(checked.map(e => moveMessage(token, e.msg.id, "deleteditems")));
+    markThreadDone(idx);
+  } catch(err) {
+    setThreadWorking(idx, "Error — try again");
   }
 }
 
-async function cardIgnore() {
-  const entry = _emailQueue[_emailIndex];
-  if (!entry || entry.done) return;
-  const token = Office.context.roamingSettings.get("access_token");
-  disableCardBtns();
-  if (entry.opts.moveOnIgnore) {
-    document.getElementById("ignoreItBtn").textContent = "Moving…";
-    try {
-      await moveMessage(token, entry.msg.id, "SentItems");
-      entry.done = true;
-      document.getElementById("ignoreItBtn").textContent = "Moved ✓";
-      autoAdvance();
-    } catch(e) {
-      document.getElementById("ignoreItBtn").textContent = "Error";
-      enableCardBtns();
-    }
-  } else {
-    entry.done = true;
-    autoAdvance();
+function skipThread(idx) {
+  markThreadDone(idx);
+}
+
+function markThreadDone(idx) {
+  const group = _threadGroups[idx];
+  if (!group) return;
+  group.done = true;
+  group.expanded = false;
+  renderThreadList();
+  if (_threadGroups.every(g => g.done)) {
+    document.getElementById("queue-status").textContent = "All done ✓";
   }
 }
 
@@ -337,7 +368,7 @@ async function processUnfiled() {
 
   btn.disabled = true;
   baselineBtn.style.display = "none";
-  document.getElementById("email-card").style.display = "none";
+  document.getElementById("thread-list").style.display = "none";
 
   const token = Office.context.roamingSettings.get("access_token");
   if (!token) { statusEl.textContent = "Not connected."; btn.disabled = false; return; }
@@ -365,7 +396,7 @@ async function processUnfiled() {
       `${GRAPH_BASE}/me/mailFolders/SentItems/messages` +
       `?$filter=sentDateTime gt ${lastRun}` +
       `&$top=100&$orderby=sentDateTime asc` +
-      `&$select=id,subject,toRecipients,ccRecipients,sentDateTime,from`,
+      `&$select=id,subject,toRecipients,ccRecipients,sentDateTime,from,conversationId`,
       { headers: { Authorization: "Bearer " + token } }
     );
     if (!msgsRes.ok) throw new Error("Graph " + msgsRes.status);
@@ -375,8 +406,6 @@ async function processUnfiled() {
     Office.context.roamingSettings.saveAsync(() => {});
 
     const nonCalendar = messages.filter(m => !isCalendarMessage(m.subject || ""));
-    nonCalendar.sort((a, b) => (a.subject || "").localeCompare(b.subject || ""));
-
     if (nonCalendar.length === 0) {
       statusEl.textContent = "No new sent emails to process.";
       btn.disabled = false;
@@ -384,35 +413,9 @@ async function processUnfiled() {
     }
 
     const folders = parseFolders(foldersJson);
-    const entries = [];
-
-    for (const msg of nonCalendar) {
-      const allRecipients = [...(msg.toRecipients || []), ...(msg.ccRecipients || [])];
-      const emails = allRecipients.map(r => r.emailAddress.address);
-      const participantText = allRecipients.map(r =>
-        r.emailAddress.name + " " + r.emailAddress.address
-      ).join(" ");
-
-      const isInternal = !hasExternalRecipient(emails, USER_DOMAIN);
-      const match = isInternal ? null : matchFolder({ subject: msg.subject || "", participantText }, folders);
-
-      const toNames = (msg.toRecipients || []).map(r => r.emailAddress.name || r.emailAddress.address).join(", ");
-      const ccNames = (msg.ccRecipients || []).map(r => r.emailAddress.name || r.emailAddress.address).join(", ");
-      entries.push({
-        msg,
-        match,
-        opts: {
-          isInternal,
-          senderLabel: toNames ? "To: " + toNames : "",
-          ccLabel: ccNames ? "CC: " + ccNames : "",
-          dateStr: formatDate(msg.sentDateTime),
-          moveOnIgnore: false
-        }
-      });
-    }
-
-    statusEl.textContent = `${entries.length} email${entries.length !== 1 ? "s" : ""} to review:`;
-    initEmailCard(entries);
+    const groups = groupByThread(nonCalendar, folders);
+    statusEl.textContent = `${groups.length} thread${groups.length !== 1 ? "s" : ""} to review:`;
+    initThreadList(groups, folders);
   } catch(e) {
     statusEl.textContent = "Error: " + e.message;
   }
@@ -439,7 +442,7 @@ async function fileInbox() {
   const statusEl = document.getElementById("queue-status");
 
   btn.disabled = true;
-  document.getElementById("email-card").style.display = "none";
+  document.getElementById("thread-list").style.display = "none";
   statusEl.textContent = "Scanning Inbox…";
 
   const token = Office.context.roamingSettings.get("access_token");
@@ -455,61 +458,24 @@ async function fileInbox() {
   try {
     const msgsRes = await fetch(
       `${GRAPH_BASE}/me/mailFolders/Inbox/messages` +
-      `?$select=id,subject,from,toRecipients,ccRecipients,receivedDateTime&$top=50&$orderby=receivedDateTime desc`,
+      `?$select=id,subject,from,toRecipients,ccRecipients,receivedDateTime,conversationId` +
+      `&$top=100&$orderby=receivedDateTime desc`,
       { headers: { Authorization: "Bearer " + token } }
     );
     if (!msgsRes.ok) throw new Error("Graph " + msgsRes.status);
     const messages = (await msgsRes.json()).value || [];
 
-    if (messages.length === 0) {
+    const nonCalendar = messages.filter(m => !isCalendarMessage(m.subject || ""));
+    if (nonCalendar.length === 0) {
       statusEl.textContent = "Inbox is empty.";
       btn.disabled = false;
       return;
     }
 
-    messages.sort((a, b) => (a.subject || "").localeCompare(b.subject || ""));
-
     const folders = parseFolders(foldersJson);
-    const entries = [];
-
-    for (const msg of messages) {
-      if (isCalendarMessage(msg.subject || "")) continue;
-
-      const fromAddr = msg.from && msg.from.emailAddress ? msg.from.emailAddress.address || "" : "";
-      const fromName = msg.from && msg.from.emailAddress ? msg.from.emailAddress.name || "" : "";
-      const allRecipients = [...(msg.toRecipients || []), ...(msg.ccRecipients || [])];
-      const recipientEmails = allRecipients.map(r => r.emailAddress ? r.emailAddress.address || "" : "");
-      const participantText = [fromName, fromAddr,
-        ...allRecipients.map(r => r.emailAddress ? (r.emailAddress.name || "") + " " + (r.emailAddress.address || "") : "")
-      ].join(" ");
-
-      const isInternal = fromAddr.toLowerCase().endsWith("@" + USER_DOMAIN) && !hasExternalRecipient(recipientEmails, USER_DOMAIN);
-      const match = isInternal ? null : matchFolder({ subject: msg.subject || "", participantText }, folders);
-
-      const toNames = (msg.toRecipients || []).map(r => r.emailAddress ? (r.emailAddress.name || r.emailAddress.address || "") : "").filter(Boolean).join(", ");
-      const ccNames = (msg.ccRecipients || []).map(r => r.emailAddress ? (r.emailAddress.name || r.emailAddress.address || "") : "").filter(Boolean).join(", ");
-      entries.push({
-        msg,
-        match,
-        opts: {
-          isInternal,
-          senderLabel: fromName ? "From: " + fromName : (fromAddr ? "From: " + fromAddr : ""),
-          toLabel: toNames ? "To: " + toNames : "",
-          ccLabel: ccNames ? "CC: " + ccNames : "",
-          dateStr: formatDate(msg.receivedDateTime),
-          moveOnIgnore: false
-        }
-      });
-    }
-
-    if (entries.length === 0) {
-      statusEl.textContent = "No emails in Inbox.";
-      btn.disabled = false;
-      return;
-    }
-
-    statusEl.textContent = `${entries.length} email${entries.length !== 1 ? "s" : ""} to review:`;
-    initEmailCard(entries);
+    const groups = groupByThread(nonCalendar, folders);
+    statusEl.textContent = `${groups.length} thread${groups.length !== 1 ? "s" : ""} to review:`;
+    initThreadList(groups, folders);
   } catch(e) {
     statusEl.textContent = "Error: " + e.message;
   }
