@@ -253,9 +253,11 @@ function renderThreadList() {
   _threadGroups.forEach((group, idx) => {
     const doneClass = group.done ? " tl-done" : "";
     const subject = esc(group.subject || "(no subject)");
-    const matchHtml = group.match
-      ? '<span class="tl-match">→ ' + esc(group.match.displayName) + '</span>'
-      : '<span class="tl-match tl-no-match">(no match)</span>';
+    const matchHtml = group.isInternal
+      ? '<span class="tl-match tl-internal">Internal</span>'
+      : group.match
+        ? '<span class="tl-match">→ ' + esc(group.match.displayName) + '</span>'
+        : '<span class="tl-match tl-no-match">(no match)</span>';
     const chevron = group.expanded ? "▲" : "▼";
     const headerAttrs = group.done ? "" : ' onclick="toggleThread(' + idx + ')" style="cursor:pointer"';
 
