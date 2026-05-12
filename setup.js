@@ -88,10 +88,10 @@ async function checkStatus() {
   const fileInboxBtn = document.getElementById("fileInboxBtn");
 
   if (refreshToken && Date.now() < expiry) {
-    statusEl.textContent = `Connected. ${folderCount} case folder${folderCount !== 1 ? "s" : ""} cached.`;
+    statusEl.innerHTML = `Connected. ${folderCount} case folder${folderCount !== 1 ? "s" : ""} cached. <button onclick="refreshFolders()" title="Refresh folders" style="background:none;border:none;cursor:pointer;font-size:13px;padding:0;color:green;vertical-align:middle;">↻</button>`;
     statusEl.style.color = "green";
     connectBtn.style.display = "none";
-    refreshBtn.style.display = "inline-block";
+    refreshBtn.style.display = "none";
     processBtn.style.display = "inline-block";
     fileInboxBtn.style.display = "inline-block";
   } else if (refreshToken) {
