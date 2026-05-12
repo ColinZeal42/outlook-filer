@@ -331,17 +331,17 @@ function buildActionButtons(idx) {
   const flagOff = checkedCount === 0 ? " disabled" : "";
   const n = checkedCount > 0 ? " (" + checkedCount + ")" : "";
 
+  const armedLabel = '<span class="tl-armed-label">↩ Reply opened — send reply, then confirm:</span>';
   let fileSection = "";
   if (!group.isInternal) {
-    if (group.armed) {
-      fileSection =
-        '<span class="tl-armed-label">↩ Reply opened — send reply, then confirm:</span>' +
-        '<button class="tl-btn tl-confirm-file"' + fileOff + ' onclick="fileThread(' + idx + ')">Confirm File' + n + '</button>';
-    } else {
-      fileSection =
-        '<button class="tl-btn tl-file"' + fileOff + ' onclick="fileThread(' + idx + ')">File' + n + '</button>' +
+    fileSection = group.armed
+      ? armedLabel + '<button class="tl-btn tl-confirm-file"' + fileOff + ' onclick="fileThread(' + idx + ')">Confirm File' + n + '</button>'
+      : '<button class="tl-btn tl-file"' + fileOff + ' onclick="fileThread(' + idx + ')">File' + n + '</button>' +
         '<button class="tl-btn tl-reply-file"' + fileOff + ' onclick="replyAndFile(' + idx + ')">Reply & File</button>';
-    }
+  } else {
+    fileSection = group.armed
+      ? armedLabel + '<button class="tl-btn tl-delete"' + delOff + ' onclick="deleteThread(' + idx + ')">Confirm Delete' + n + '</button>'
+      : '<button class="tl-btn tl-reply-delete"' + delOff + ' onclick="replyAndFile(' + idx + ')">Reply & Delete</button>';
   }
 
   return fileSection +
