@@ -35,9 +35,47 @@ Office.onReady(async () => {
   }
 });
 
+// --- Token refresh ---
+
+async function refreshAccessToken() {
+  const storedRefresh = Office.context.roamingSettings.get("refresh_token");
+  if (!storedRefresh) return false;
+  try {
+    const res = await fetch("https://login.microsoftonline.com/hmflaw.com/oauth2/v2.0/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_id: "75dc31c8-0515-4c64-849c-3958218e2c5f",
+        grant_type: "refresh_token",
+        refresh_token: storedRefresh,
+        scope: "https://graph.microsoft.com/Mail.ReadWrite offline_access"
+      }).toString()
+    });
+    if (!res.ok) return false;
+    const data = await res.json();
+    if (!data.access_token) return false;
+    Office.context.roamingSettings.set("access_token", data.access_token);
+    Office.context.roamingSettings.set("token_expiry", String(Date.now() + data.expires_in * 1000));
+    if (data.refresh_token) Office.context.roamingSettings.set("refresh_token", data.refresh_token);
+    await new Promise(resolve => Office.context.roamingSettings.saveAsync(resolve));
+    return true;
+  } catch(e) {
+    return false;
+  }
+}
+
+async function ensureFreshToken() {
+  const expiry = parseInt(Office.context.roamingSettings.get("token_expiry") || "0");
+  if (Date.now() >= expiry) {
+    const ok = await refreshAccessToken();
+    if (!ok) throw new Error("Session expired. Please reconnect.");
+  }
+  return Office.context.roamingSettings.get("access_token");
+}
+
 // --- Status ---
 
-function checkStatus() {
+async function checkStatus() {
   const refreshToken = Office.context.roamingSettings.get("refresh_token");
   const expiry = parseInt(Office.context.roamingSettings.get("token_expiry") || "0");
   const foldersJson = Office.context.roamingSettings.get("case_folders");
@@ -55,11 +93,24 @@ function checkStatus() {
     refreshBtn.style.display = "inline-block";
     processBtn.style.display = "inline-block";
     fileInboxBtn.style.display = "inline-block";
+  } else if (refreshToken) {
+    statusEl.textContent = "Refreshing session…";
+    statusEl.style.color = "#555";
+    connectBtn.style.display = "none";
+    refreshBtn.style.display = "none";
+    processBtn.style.display = "none";
+    fileInboxBtn.style.display = "none";
+    const ok = await refreshAccessToken();
+    if (ok) {
+      checkStatus();
+    } else {
+      statusEl.textContent = "Session expired. Click Connect to sign in.";
+      statusEl.style.color = "darkorange";
+      connectBtn.style.display = "inline-block";
+    }
   } else {
-    statusEl.textContent = refreshToken
-      ? "Token expired. Click Connect to refresh."
-      : "Not connected. Click Connect to sign in.";
-    statusEl.style.color = refreshToken ? "darkorange" : "#555";
+    statusEl.textContent = "Not connected. Click Connect to sign in.";
+    statusEl.style.color = "#555";
     connectBtn.style.display = "inline-block";
     refreshBtn.style.display = "none";
     processBtn.style.display = "none";
@@ -260,11 +311,7 @@ function buildActionButtons(idx) {
   const fileOff = (!folder || checkedCount === 0) ? " disabled" : "";
   const delOff  = checkedCount === 0 ? " disabled" : "";
   const n = checkedCount > 0 ? " " + checkedCount : "";
-  const folderLine = folder
-    ? '<div class="tl-folder-label">→ ' + esc(folder.displayName) + '</div>'
-    : '';
-  return folderLine +
-         '<button class="tl-btn tl-file"'   + fileOff + ' onclick="fileThread('   + idx + ')">File'   + n + '</button>' +
+  return '<button class="tl-btn tl-file"'   + fileOff + ' onclick="fileThread('   + idx + ')">File'   + n + '</button>' +
          '<button class="tl-btn tl-delete"' + delOff  + ' onclick="deleteThread(' + idx + ')">Delete' + n + '</button>' +
          '<button class="tl-btn tl-skip" onclick="skipThread(' + idx + ')">Skip</button>';
 }
@@ -280,7 +327,8 @@ function toggleThread(idx) {
 }
 
 async function loadThreadBodies(group) {
-  const token = Office.context.roamingSettings.get("access_token");
+  const token = await ensureFreshToken().catch(() => null);
+  if (!token) return;
   await Promise.all(group.emails.map(async e => {
     if (e.body !== null) return;
     const details = await fetchEmailDetails(token, e.msg.id)
@@ -323,9 +371,9 @@ async function fileThread(idx) {
   if (!folder) return;
   const checked = group.emails.filter(e => e.checked);
   if (!checked.length) return;
-  const token = Office.context.roamingSettings.get("access_token");
   setThreadWorking(idx, "Filing…");
   try {
+    const token = await ensureFreshToken();
     for (const e of checked) await moveMessage(token, e.msg.id, folder.id);
     markThreadDone(idx);
   } catch(err) {
@@ -338,9 +386,9 @@ async function deleteThread(idx) {
   if (!group) return;
   const checked = group.emails.filter(e => e.checked);
   if (!checked.length) return;
-  const token = Office.context.roamingSettings.get("access_token");
   setThreadWorking(idx, "Deleting…");
   try {
+    const token = await ensureFreshToken();
     for (const e of checked) await moveMessage(token, e.msg.id, "deleteditems");
     markThreadDone(idx);
   } catch(err) {
@@ -385,9 +433,6 @@ async function processUnfiled() {
   baselineBtn.style.display = "none";
   document.getElementById("thread-list").style.display = "none";
 
-  const token = Office.context.roamingSettings.get("access_token");
-  if (!token) { statusEl.textContent = "Not connected."; btn.disabled = false; return; }
-
   const foldersJson = Office.context.roamingSettings.get("case_folders");
   if (!foldersJson) {
     statusEl.textContent = "No case folders cached. Click Refresh Folders first.";
@@ -407,6 +452,7 @@ async function processUnfiled() {
   const newTimestamp = new Date().toISOString();
 
   try {
+    const token = await ensureFreshToken();
     const msgsRes = await fetch(
       `${GRAPH_BASE}/me/mailFolders/SentItems/messages` +
       `?$filter=sentDateTime gt ${lastRun}` +
@@ -460,9 +506,6 @@ async function fileInbox() {
   document.getElementById("thread-list").style.display = "none";
   statusEl.textContent = "Scanning Inbox…";
 
-  const token = Office.context.roamingSettings.get("access_token");
-  if (!token) { statusEl.textContent = "Not connected."; btn.disabled = false; return; }
-
   const foldersJson = Office.context.roamingSettings.get("case_folders");
   if (!foldersJson) {
     statusEl.textContent = "No case folders cached. Click Refresh Folders first.";
@@ -471,6 +514,7 @@ async function fileInbox() {
   }
 
   try {
+    const token = await ensureFreshToken();
     const msgsRes = await fetch(
       `${GRAPH_BASE}/me/mailFolders/Inbox/messages` +
       `?$select=id,subject,from,toRecipients,ccRecipients,receivedDateTime,conversationId` +
@@ -514,11 +558,10 @@ async function fetchCaseFolders(token) {
 async function refreshFolders() {
   const btn = document.getElementById("refreshBtn");
   const statusEl = document.getElementById("status");
-  const token = Office.context.roamingSettings.get("access_token");
-  if (!token) { statusEl.textContent = "Not connected."; statusEl.style.color = "red"; return; }
   btn.disabled = true;
   statusEl.textContent = "Refreshing folder list...";
   try {
+    const token = await ensureFreshToken();
     const folders = await fetchCaseFolders(token);
     Office.context.roamingSettings.set("case_folders", JSON.stringify(folders));
     Office.context.roamingSettings.saveAsync(() => { btn.disabled = false; checkStatus(); });
