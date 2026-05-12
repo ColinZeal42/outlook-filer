@@ -78,6 +78,36 @@
                       <SourceLocation resid="Setup.Html"/>
                     </Action>
                   </Control>
+                  <Control xsi:type="Button" id="hmfFileSentBtn">
+                    <Label resid="FileSentLabel"/>
+                    <Supertip>
+                      <Title resid="FileSentLabel"/>
+                      <Description resid="FileSentDesc"/>
+                    </Supertip>
+                    <Icon>
+                      <bt:Image size="16" resid="Icon16"/>
+                      <bt:Image size="32" resid="Icon32"/>
+                      <bt:Image size="80" resid="Icon80"/>
+                    </Icon>
+                    <Action xsi:type="ExecuteFunction">
+                      <FunctionName>openFilingSent</FunctionName>
+                    </Action>
+                  </Control>
+                  <Control xsi:type="Button" id="hmfFileInboxBtn">
+                    <Label resid="FileInboxLabel"/>
+                    <Supertip>
+                      <Title resid="FileInboxLabel"/>
+                      <Description resid="FileInboxDesc"/>
+                    </Supertip>
+                    <Icon>
+                      <bt:Image size="16" resid="Icon16"/>
+                      <bt:Image size="32" resid="Icon32"/>
+                      <bt:Image size="80" resid="Icon80"/>
+                    </Icon>
+                    <Action xsi:type="ExecuteFunction">
+                      <FunctionName>openFilingInbox</FunctionName>
+                    </Action>
+                  </Control>
                 </Group>
               </OfficeTab>
             </ExtensionPoint>
@@ -93,14 +123,18 @@
           <bt:Image id="Icon80" DefaultValue="https://ColinZeal42.github.io/outlook-filer/assets/icon-128.png"/>
         </bt:Images>
         <bt:Urls>
-          <bt:Url id="Commands.Html" DefaultValue="https://ColinZeal42.github.io/outlook-filer/commands.html?v=19"/>
+          <bt:Url id="Commands.Html" DefaultValue="https://ColinZeal42.github.io/outlook-filer/commands.html?v=20"/>
           <bt:Url id="Setup.Html" DefaultValue="https://ColinZeal42.github.io/outlook-filer/setup.html"/>
         </bt:Urls>
         <bt:ShortStrings>
           <bt:String id="AddInName" DefaultValue="HMF Email Filer"/>
+          <bt:String id="FileSentLabel" DefaultValue="File Sent"/>
+          <bt:String id="FileInboxLabel" DefaultValue="File Inbox"/>
         </bt:ShortStrings>
         <bt:LongStrings>
           <bt:String id="AddInDescription" DefaultValue="Files sent emails into matching case folders."/>
+          <bt:String id="FileSentDesc" DefaultValue="File sent emails into case folders"/>
+          <bt:String id="FileInboxDesc" DefaultValue="File inbox emails into case folders"/>
         </bt:LongStrings>
       </Resources>
 
