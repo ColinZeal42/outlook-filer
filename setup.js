@@ -260,7 +260,11 @@ function buildActionButtons(idx) {
   const fileOff = (!folder || checkedCount === 0) ? " disabled" : "";
   const delOff  = checkedCount === 0 ? " disabled" : "";
   const n = checkedCount > 0 ? " " + checkedCount : "";
-  return '<button class="tl-btn tl-file"'   + fileOff + ' onclick="fileThread('   + idx + ')">File'   + n + '</button>' +
+  const folderLine = folder
+    ? '<div class="tl-folder-label">→ ' + esc(folder.displayName) + '</div>'
+    : '';
+  return folderLine +
+         '<button class="tl-btn tl-file"'   + fileOff + ' onclick="fileThread('   + idx + ')">File'   + n + '</button>' +
          '<button class="tl-btn tl-delete"' + delOff  + ' onclick="deleteThread(' + idx + ')">Delete' + n + '</button>' +
          '<button class="tl-btn tl-skip" onclick="skipThread(' + idx + ')">Skip</button>';
 }
