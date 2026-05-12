@@ -216,7 +216,10 @@ function groupByThread(messages, folders) {
     const hits = Object.values(counts);
     const best = hits.length ? hits.reduce((a, b) => b.n > a.n ? b : a).folder : null;
 
-    const isInternal = group.emails.every(e => !hasExternalRecipient(recipientAddresses(e.msg), USER_DOMAIN));
+    const isInternal = group.emails.every(e => {
+      const fromAddr = (e.msg.from && e.msg.from.emailAddress && e.msg.from.emailAddress.address) || "";
+      return !hasExternalRecipient([fromAddr, ...recipientAddresses(e.msg)], USER_DOMAIN);
+    });
 
     return {
       conversationId: cid,
