@@ -1,41 +1,59 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
   <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>File Email</title>
+  <title>HMF Email Filer</title>
   <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+  <script>
+    var s = document.createElement("script");
+    s.src = "dialog.js?t=" + Date.now();
+    document.head.appendChild(s);
+  </script>
   <style>
-    body {
-      font-family: "Segoe UI", sans-serif;
-      margin: 0;
-      padding: 24px;
-      background: #fff;
-      color: #1a1a1a;
-    }
-    .prompt { font-size: 14px; margin-bottom: 8px; }
-    .folder { font-size: 16px; font-weight: 600; margin-bottom: 24px; color: #0078d4; }
-    .buttons { display: flex; gap: 12px; }
-    button {
-      padding: 8px 20px;
-      font-size: 14px;
-      border: none;
-      border-radius: 4px;
-      cursor: pointer;
-    }
-    #move   { background: #0078d4; color: #fff; }
-    #move:hover { background: #106ebe; }
-    #skip   { background: #f3f3f3; color: #1a1a1a; }
-    #skip:hover { background: #e0e0e0; }
+    body { font-family: 'Segoe UI', sans-serif; padding: 20px; color: #1a1a1a; margin: 0; font-size: 15px; }
+    #status { font-size: 14px; margin-bottom: 10px; color: #555; }
+    #queue-status { font-size: 14px; margin-bottom: 12px; color: #555; min-height: 20px; }
+
+    #thread-list { margin-top: 10px; }
+    .tl-group { border: 1px solid #e0e0e0; border-radius: 4px; margin-bottom: 9px; overflow: hidden; }
+    .tl-done { opacity: 0.42; pointer-events: none; }
+    .tl-header { display: flex; align-items: baseline; gap: 8px; padding: 9px 12px; background: #f9f9f9; font-size: 14px; user-select: none; }
+    .tl-header:hover { background: #f0f0f0; }
+    .tl-pill { background: #0078d4; color: #fff; border-radius: 10px; padding: 2px 8px; font-size: 11px; font-weight: 700; flex-shrink: 0; }
+    .tl-subject { font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .tl-match { font-size: 13px; color: #0078d4; flex-shrink: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px; }
+    .tl-no-match { color: #aaa; font-style: italic; }
+    .tl-internal { color: #a4262c; font-style: italic; }
+    .tl-chevron { font-size: 11px; color: #888; flex-shrink: 0; }
+    .tl-body { border-top: 1px solid #e0e0e0; padding: 10px 12px; }
+    .tl-email { margin-bottom: 10px; }
+    .tl-email-label { display: flex; align-items: flex-start; gap: 9px; cursor: pointer; }
+    .tl-email-label input[type=checkbox] { margin-top: 3px; flex-shrink: 0; width: 15px; height: 15px; }
+    .tl-email-content { flex: 1; min-width: 0; }
+    .tl-email-meta { font-size: 13px; font-weight: 600; color: #1a1a1a; margin-bottom: 3px; }
+    .tl-email-date { font-weight: 400; color: #888; }
+    .tl-email-body { font-size: 13px; color: #555; line-height: 1.5; background: #f9f9f9; border: 1px solid #e8e8e8; border-radius: 3px; padding: 6px 10px; white-space: pre-wrap; word-break: break-word; cursor: pointer; }
+    .tl-email-body:hover { background: #eef4fb; border-color: #c7e0f4; }
+    .tl-badge { font-size: 12px; font-weight: 700; color: #ca5010; }
+    .tl-fwd { color: #8764b8; }
+    .tl-folder-select { width: 100%; margin: 8px 0; font-size: 13px; padding: 5px 7px; border: 1px solid #ccc; border-radius: 3px; font-family: 'Segoe UI', sans-serif; }
+    .tl-actions { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; align-items: center; }
+    .tl-btn { padding: 6px 14px; border: none; border-radius: 3px; color: #fff; font-size: 13px; cursor: pointer; font-family: 'Segoe UI', sans-serif; }
+    .tl-btn:disabled { background: #bbb !important; cursor: default; }
+    .tl-file { background: #107c10; }
+    .tl-reply-file { background: #0078d4; }
+    .tl-reply-delete { background: #a4262c; }
+    .tl-confirm-file { background: #107c10; font-weight: 700; }
+    .tl-delete { background: #a4262c; }
+    .tl-flag { background: #ca5010; }
+    .tl-skip { background: #605e5c; }
+    .tl-working { font-size: 13px; color: #555; font-style: italic; }
+    .tl-armed-label { flex-basis: 100%; font-size: 12px; color: #0078d4; font-style: italic; margin-bottom: 2px; }
   </style>
 </head>
 <body>
-  <div class="prompt">File this email under:</div>
-  <div class="folder" id="folderName">Loading…</div>
-  <div class="buttons">
-    <button id="move">Move</button>
-    <button id="skip">Skip</button>
-  </div>
-  <script src="dialog.js"></script>
+  <div id="status">Loading…</div>
+  <div id="queue-status"></div>
+  <div id="thread-list"></div>
 </body>
 </html>

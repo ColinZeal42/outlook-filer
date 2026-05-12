@@ -1,33 +1,594 @@
-/*
- * ATTENTION: The "eval" devtool has been used (maybe by default in mode: "development").
- * This devtool is neither made for production nor for readable output files.
- * It uses "eval()" calls to create a separate source file in the browser devtools.
- * If you are trying to read the output file, select a different devtool (https://webpack.js.org/configuration/devtool/)
- * or disable the default devtool with "devtool: false".
- * If you are looking for production-ready output files, see mode: "production" (https://webpack.js.org/configuration/mode/).
- */
-/******/ (() => { // webpackBootstrap
-/******/ 	"use strict";
-/******/ 	var __webpack_modules__ = ({
+"use strict";
 
-/***/ "./src/dialog/dialog.ts"
-/*!******************************!*\
-  !*** ./src/dialog/dialog.ts ***!
-  \******************************/
-() {
+const GRAPH_BASE = "https://graph.microsoft.com/v1.0";
+const USER_DOMAIN = "hmflaw.com";
 
-eval("{\nOffice.onReady(() => {\n    var _a, _b;\n    // The dialog receives folder info via the URL hash: #folderName=...&folderId=...\n    const params = new URLSearchParams(window.location.hash.slice(1));\n    const folderName = (_a = params.get(\"folderName\")) !== null && _a !== void 0 ? _a : \"Unknown folder\";\n    const folderId = (_b = params.get(\"folderId\")) !== null && _b !== void 0 ? _b : \"\";\n    document.getElementById(\"folderName\").textContent = folderName;\n    document.getElementById(\"move\").addEventListener(\"click\", () => {\n        Office.context.ui.messageParent(JSON.stringify({ action: \"move\", folderId }));\n    });\n    document.getElementById(\"skip\").addEventListener(\"click\", () => {\n        Office.context.ui.messageParent(JSON.stringify({ action: \"skip\" }));\n    });\n});\n\n\n//# sourceURL=webpack://outlook-filer/./src/dialog/dialog.ts?\n}");
+let _threadGroups = [];
+let _threadFolders = [];
+let _mode = "inbox";
 
-/***/ }
+Office.onReady(() => {
+  _mode = localStorage.getItem("hmf_mode") || "inbox";
+  if (_mode === "sent") {
+    processSent();
+  } else {
+    processInbox();
+  }
+});
 
-/******/ 	});
-/************************************************************************/
-/******/ 	
-/******/ 	// startup
-/******/ 	// Load entry module and return exports
-/******/ 	// This entry module can't be inlined because the eval devtool is used.
-/******/ 	var __webpack_exports__ = {};
-/******/ 	__webpack_modules__["./src/dialog/dialog.ts"]();
-/******/ 	
-/******/ })()
-;
+// --- Token management (localStorage) ---
+
+async function refreshAccessToken() {
+  const storedRefresh = localStorage.getItem("hmf_refresh_token");
+  if (!storedRefresh) return false;
+  try {
+    const res = await fetch("https://login.microsoftonline.com/hmflaw.com/oauth2/v2.0/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_id: "75dc31c8-0515-4c64-849c-3958218e2c5f",
+        grant_type: "refresh_token",
+        refresh_token: storedRefresh,
+        scope: "https://graph.microsoft.com/Mail.ReadWrite offline_access"
+      }).toString()
+    });
+    if (!res.ok) return false;
+    const data = await res.json();
+    if (!data.access_token) return false;
+    localStorage.setItem("hmf_access_token", data.access_token);
+    localStorage.setItem("hmf_token_expiry", String(Date.now() + data.expires_in * 1000));
+    if (data.refresh_token) localStorage.setItem("hmf_refresh_token", data.refresh_token);
+    return true;
+  } catch(e) {
+    return false;
+  }
+}
+
+async function ensureFreshToken() {
+  const expiry = parseInt(localStorage.getItem("hmf_token_expiry") || "0");
+  if (Date.now() >= expiry) {
+    const ok = await refreshAccessToken();
+    if (!ok) throw new Error("Session expired. Please reconnect in the task pane.");
+  }
+  return localStorage.getItem("hmf_access_token");
+}
+
+// --- Graph helpers ---
+
+async function moveMessage(token, msgId, destinationId) {
+  const res = await fetch(`${GRAPH_BASE}/me/messages/${msgId}/move`, {
+    method: "POST",
+    headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+    body: JSON.stringify({ destinationId })
+  });
+  if (!res.ok) throw new Error("Move failed: " + res.status);
+}
+
+async function fetchEmailDetails(token, msgId) {
+  try {
+    const res = await fetch(
+      `${GRAPH_BASE}/me/messages/${msgId}?$select=body` +
+      `&$expand=singleValueExtendedProperties($filter=id eq 'Integer 0x1081')`,
+      {
+        headers: {
+          Authorization: "Bearer " + token,
+          "Prefer": 'outlook.body-content-type="text"'
+        }
+      }
+    );
+    if (!res.ok) return { body: null, isReplied: false, isForwarded: false };
+    const data = await res.json();
+    const verb = parseInt(((data.singleValueExtendedProperties || [])[0] || {}).value || "0");
+    return {
+      body: data.body && data.body.content ? data.body.content : null,
+      isReplied: verb === 102 || verb === 103,
+      isForwarded: verb === 104
+    };
+  } catch(e) {
+    return { body: null, isReplied: false, isForwarded: false };
+  }
+}
+
+// --- Helpers ---
+
+function stripClutter(text) {
+  return text
+    .replace(/\[.*?\]/g, "")
+    .replace(/<https?:\/\/[^>]*>/g, "")
+    .replace(/https?:\/\/\S+/g, "")
+    .replace(/\s{2,}/g, " ");
+}
+
+function extractPreviewLines(text, maxLines) {
+  if (!text) return "";
+  const lines = text.split(/\r?\n/);
+  const result = [];
+  let blankRun = 0;
+  for (const line of lines) {
+    const t = stripClutter(line).trim();
+    if (!t) {
+      if (blankRun === 0 && result.length > 0) result.push("");
+      blankRun++;
+    } else {
+      blankRun = 0;
+      result.push(t);
+    }
+    if (result.length >= maxLines) break;
+  }
+  return result.join("\n").trim();
+}
+
+function esc(s) {
+  return String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+function formatDate(dateStr) {
+  if (!dateStr) return "";
+  const d = new Date(dateStr);
+  if (isNaN(d)) return "";
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+// --- Email matching ---
+
+const CALENDAR_PREFIXES = ["accepted:", "declined:", "tentative:", "cancelled:", "meeting request:"];
+
+function isCalendarMessage(subject) {
+  return CALENDAR_PREFIXES.some(p => subject.toLowerCase().indexOf(p) === 0);
+}
+
+function recipientAddresses(msg) {
+  return [...(msg.toRecipients || []), ...(msg.ccRecipients || [])]
+    .map(r => r.emailAddress && r.emailAddress.address)
+    .filter(Boolean);
+}
+
+function hasExternalRecipient(emails, domain) {
+  return emails.some(a => a && a.toLowerCase().slice(-(domain.length + 1)) !== "@" + domain);
+}
+
+function parseFolders(foldersJson) {
+  return JSON.parse(foldersJson).map(f => ({
+    displayName: f.displayName,
+    id: f.id,
+    keywords: f.displayName.split("/").map(k => k.trim().toLowerCase())
+  }));
+}
+
+function matchFolder(email, folders) {
+  const texts = [email.subject, email.participantText, email.bodyText || ""].filter(Boolean);
+  for (let t = 0; t < texts.length; t++) {
+    const lower = texts[t].toLowerCase();
+    for (let f = 0; f < folders.length; f++) {
+      const kws = folders[f].keywords;
+      for (let k = 0; k < kws.length; k++) {
+        if (lower.indexOf(kws[k]) !== -1) return folders[f];
+      }
+    }
+  }
+  return null;
+}
+
+// --- Thread grouping ---
+
+function groupByThread(messages, folders) {
+  const map = {};
+  const order = [];
+  for (const msg of messages) {
+    const cid = msg.conversationId || msg.id;
+    if (!map[cid]) {
+      map[cid] = { conversationId: cid, subject: msg.subject || "", emails: [], latestDate: 0 };
+      order.push(cid);
+    }
+    const d = new Date(msg.sentDateTime || msg.receivedDateTime || 0).getTime();
+    if (d > map[cid].latestDate) {
+      map[cid].latestDate = d;
+      map[cid].subject = msg.subject || map[cid].subject;
+    }
+    map[cid].emails.push({ msg, checked: true, body: null, isReplied: undefined, isForwarded: undefined });
+  }
+
+  return order.map(cid => {
+    const group = map[cid];
+    const counts = {};
+    for (const e of group.emails) {
+      const allRecip = [...(e.msg.toRecipients || []), ...(e.msg.ccRecipients || [])];
+      const ea = (e.msg.from && e.msg.from.emailAddress) || {};
+      const pt = [ea.name || "", ea.address || "",
+        ...allRecip.map(r => { const a = r.emailAddress || {}; return (a.name || "") + " " + (a.address || ""); })
+      ].join(" ");
+      const m = matchFolder({ subject: e.msg.subject || "", participantText: pt }, folders);
+      if (m) {
+        if (!counts[m.id]) counts[m.id] = { folder: m, n: 0 };
+        counts[m.id].n++;
+      }
+    }
+    const hits = Object.values(counts);
+    const best = hits.length ? hits.reduce((a, b) => b.n > a.n ? b : a).folder : null;
+
+    const isInternal = group.emails.every(e => {
+      const fromAddr = (e.msg.from && e.msg.from.emailAddress && e.msg.from.emailAddress.address) || "";
+      return !hasExternalRecipient([fromAddr, ...recipientAddresses(e.msg)], USER_DOMAIN);
+    });
+
+    return {
+      conversationId: cid,
+      subject: group.subject,
+      emails: group.emails,
+      match: best,
+      manualMatch: null,
+      armed: false,
+      expanded: false,
+      done: false,
+      latestDate: group.latestDate,
+      isInternal
+    };
+  }).sort((a, b) => b.latestDate - a.latestDate);
+}
+
+// --- Thread list UI ---
+
+function initThreadList(groups, folders, mode) {
+  _threadGroups = groups;
+  _threadFolders = folders;
+  _mode = mode || "inbox";
+  document.getElementById("thread-list").style.display = "block";
+  renderThreadList();
+}
+
+function renderThreadList() {
+  const el = document.getElementById("thread-list");
+  if (!el) return;
+  let html = "";
+
+  _threadGroups.forEach((group, idx) => {
+    const doneClass = group.done ? " tl-done" : "";
+    const subject = esc(group.subject || "(no subject)");
+    const effectiveFolder = group.manualMatch || group.match;
+    const matchHtml = group.isInternal
+      ? '<span class="tl-match tl-internal">Internal</span>'
+      : effectiveFolder
+        ? '<span class="tl-match">→ ' + esc(effectiveFolder.displayName) + '</span>'
+        : '<span class="tl-match tl-no-match">(no match)</span>';
+    const chevron = group.expanded ? "▲" : "▼";
+    const headerAttrs = group.done ? "" : ' onclick="toggleThread(' + idx + ')" style="cursor:pointer"';
+
+    html += '<div class="tl-group' + doneClass + '" id="tg-' + idx + '">';
+    html += '<div class="tl-header"' + headerAttrs + '>';
+    html += '<span class="tl-pill">' + group.emails.length + '</span>';
+    html += '<span class="tl-subject">' + subject + '</span>';
+    html += matchHtml;
+    html += '<span class="tl-chevron">' + chevron + '</span>';
+    html += '</div>';
+
+    if (group.expanded && !group.done) {
+      html += '<div class="tl-body">';
+      group.emails.forEach(e => {
+        const ea = (e.msg.from && e.msg.from.emailAddress) || {};
+        const sender = esc(ea.name || ea.address || "Unknown");
+        const dateStr = esc(formatDate(e.msg.sentDateTime || e.msg.receivedDateTime));
+        const badge = e.isForwarded ? '<span class="tl-badge tl-fwd">↪</span> '
+                    : e.isReplied   ? '<span class="tl-badge">↩</span> '
+                    : '';
+        const bodyHtml = e.body === null
+          ? '<em>Loading…</em>'
+          : esc(e.body || "(no preview)").replace(/\n/g, "<br>");
+        const checked = e.checked ? " checked" : "";
+
+        html += '<div class="tl-email">';
+        html += '<label class="tl-email-label">';
+        html += '<input type="checkbox" id="chk-' + esc(e.msg.id) + '"' + checked + ' onchange="onCheckChange(' + idx + ')">';
+        html += '<div class="tl-email-content">';
+        html += '<div class="tl-email-meta">' + badge + sender + ' <span class="tl-email-date">· ' + dateStr + '</span></div>';
+        html += '<div class="tl-email-body" onclick="event.preventDefault();openEmail(\'' + esc(e.msg.id) + '\')">' + bodyHtml + '</div>';
+        html += '</div></label></div>';
+      });
+
+      if (!group.isInternal) {
+        const selectedId = (group.manualMatch || group.match || {}).id || "";
+        html += '<select class="tl-folder-select" onchange="onFolderPick(' + idx + ', this.value)">';
+        html += '<option value=""' + (!selectedId ? ' selected' : '') + '>Choose folder…</option>';
+        _threadFolders.forEach(f => {
+          html += '<option value="' + esc(f.id) + '"' + (f.id === selectedId ? ' selected' : '') + '>' + esc(f.displayName) + '</option>';
+        });
+        html += '</select>';
+      }
+
+      html += '<div class="tl-actions" id="tl-actions-' + idx + '">' + buildActionButtons(idx) + '</div>';
+      html += '</div>';
+    }
+
+    html += '</div>';
+  });
+
+  el.innerHTML = html;
+}
+
+function buildActionButtons(idx) {
+  const group = _threadGroups[idx];
+  const checkedCount = group.emails.filter(e => e.checked).length;
+  const folder = group.manualMatch || group.match;
+  const fileOff = (!folder || checkedCount === 0) ? " disabled" : "";
+  const delOff  = checkedCount === 0 ? " disabled" : "";
+  const flagOff = checkedCount === 0 ? " disabled" : "";
+  const n = checkedCount > 0 ? " (" + checkedCount + ")" : "";
+
+  const armedLabel = '<span class="tl-armed-label">↩ Reply opened — send reply, then confirm:</span>';
+  let fileSection = "";
+  if (_mode === "sent") {
+    fileSection = '<button class="tl-btn tl-file"' + fileOff + ' onclick="fileThread(' + idx + ')">File' + n + '</button>';
+  } else if (!group.isInternal) {
+    fileSection = group.armed
+      ? armedLabel + '<button class="tl-btn tl-confirm-file"' + fileOff + ' onclick="fileThread(' + idx + ')">Confirm File' + n + '</button>'
+      : '<button class="tl-btn tl-file"' + fileOff + ' onclick="fileThread(' + idx + ')">File' + n + '</button>' +
+        '<button class="tl-btn tl-reply-file"' + fileOff + ' onclick="replyAndFile(' + idx + ')">Reply & File</button>';
+  } else {
+    fileSection = group.armed
+      ? armedLabel + '<button class="tl-btn tl-delete"' + delOff + ' onclick="deleteThread(' + idx + ')">Confirm Delete' + n + '</button>'
+      : '<button class="tl-btn tl-reply-delete"' + delOff + ' onclick="replyAndFile(' + idx + ')">Reply & Delete</button>';
+  }
+
+  const deleteBtn = _mode === "sent" ? "" :
+    '<button class="tl-btn tl-delete"' + delOff + ' onclick="deleteThread(' + idx + ')">Delete' + n + '</button>';
+  const flagBtn = _mode === "sent" ? "" :
+    '<button class="tl-btn tl-flag"' + flagOff + ' onclick="flagThread(' + idx + ')">Flag' + n + '</button>';
+
+  return fileSection + deleteBtn + flagBtn +
+    '<button class="tl-btn tl-skip" onclick="skipThread(' + idx + ')">Skip</button>';
+}
+
+function toggleThread(idx) {
+  const group = _threadGroups[idx];
+  if (!group || group.done) return;
+  const willExpand = !group.expanded;
+  const needsLoad = willExpand && group.emails.some(e => e.body === null);
+  group.expanded = willExpand;
+  renderThreadList();
+  if (needsLoad) loadThreadBodies(group);
+}
+
+async function loadThreadBodies(group) {
+  const token = await ensureFreshToken().catch(() => null);
+  if (!token) return;
+  const rawBodies = {};
+  await Promise.all(group.emails.map(async e => {
+    if (e.body !== null) return;
+    const details = await fetchEmailDetails(token, e.msg.id)
+      .catch(() => ({ body: null, isReplied: false, isForwarded: false }));
+    rawBodies[e.msg.id] = details.body || "";
+    e.body = extractPreviewLines(details.body, 5) || "(no preview)";
+    e.isReplied = details.isReplied;
+    e.isForwarded = details.isForwarded;
+  }));
+  if (!group.match) {
+    const counts = {};
+    for (const e of group.emails) {
+      const allRecip = [...(e.msg.toRecipients||[]), ...(e.msg.ccRecipients||[])];
+      const fromAddr = e.msg.from?.emailAddress?.address || "";
+      const fromName = e.msg.from?.emailAddress?.name || "";
+      const pt = [fromName, fromAddr, ...allRecip.map(r => (r.emailAddress?.name||"") + " " + (r.emailAddress?.address||""))].join(" ");
+      const m = matchFolder({ subject: e.msg.subject || "", participantText: pt, bodyText: rawBodies[e.msg.id] || "" }, _threadFolders);
+      if (m) { if (!counts[m.id]) counts[m.id] = { folder: m, n: 0 }; counts[m.id].n++; }
+    }
+    const entries = Object.values(counts);
+    if (entries.length) group.match = entries.reduce((a, b) => b.n > a.n ? b : a).folder;
+  }
+  if (group.expanded && !group.done) renderThreadList();
+}
+
+function onCheckChange(idx) {
+  const group = _threadGroups[idx];
+  if (!group) return;
+  group.emails.forEach(e => {
+    const chk = document.getElementById("chk-" + e.msg.id);
+    if (chk) e.checked = chk.checked;
+  });
+  const actionsEl = document.getElementById("tl-actions-" + idx);
+  if (actionsEl) actionsEl.innerHTML = buildActionButtons(idx);
+}
+
+function onFolderPick(idx, folderId) {
+  const group = _threadGroups[idx];
+  if (!group) return;
+  group.manualMatch = folderId ? (_threadFolders.find(f => f.id === folderId) || null) : null;
+  renderThreadList();
+}
+
+function setThreadWorking(idx, msg) {
+  const actionsEl = document.getElementById("tl-actions-" + idx);
+  if (actionsEl) actionsEl.innerHTML = '<span class="tl-working">' + esc(msg) + '</span>';
+}
+
+function markThreadDone(idx) {
+  const group = _threadGroups[idx];
+  if (!group) return;
+  group.done = true;
+  group.expanded = false;
+
+  const nextIdx = _threadGroups.findIndex((g, i) => i > idx && !g.done);
+  if (nextIdx !== -1) _threadGroups[nextIdx].expanded = true;
+
+  renderThreadList();
+
+  if (nextIdx !== -1) {
+    const nextEl = document.getElementById("tg-" + nextIdx);
+    if (nextEl) nextEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    if (_threadGroups[nextIdx].emails.some(e => e.body === null)) {
+      loadThreadBodies(_threadGroups[nextIdx]);
+    }
+  } else if (_threadGroups.every(g => g.done)) {
+    document.getElementById("queue-status").textContent = "All done ✓";
+  }
+}
+
+// --- Actions ---
+
+async function fileThread(idx) {
+  const group = _threadGroups[idx];
+  if (!group) return;
+  const folder = group.manualMatch || group.match;
+  if (!folder) return;
+  const checked = group.emails.filter(e => e.checked);
+  if (!checked.length) return;
+  setThreadWorking(idx, "Filing…");
+  try {
+    const token = await ensureFreshToken();
+    for (const e of checked) await moveMessage(token, e.msg.id, folder.id);
+    markThreadDone(idx);
+  } catch(err) {
+    setThreadWorking(idx, "Error — try again");
+  }
+}
+
+async function deleteThread(idx) {
+  const group = _threadGroups[idx];
+  if (!group) return;
+  const checked = group.emails.filter(e => e.checked);
+  if (!checked.length) return;
+  setThreadWorking(idx, "Deleting…");
+  try {
+    const token = await ensureFreshToken();
+    for (const e of checked) await moveMessage(token, e.msg.id, "deleteditems");
+    markThreadDone(idx);
+  } catch(err) {
+    setThreadWorking(idx, "Error — try again");
+  }
+}
+
+async function flagThread(idx) {
+  const group = _threadGroups[idx];
+  if (!group) return;
+  const checked = group.emails.filter(e => e.checked);
+  if (!checked.length) return;
+  setThreadWorking(idx, "Flagging…");
+  try {
+    const token = await ensureFreshToken();
+    for (const e of checked) {
+      await fetch(`${GRAPH_BASE}/me/messages/${e.msg.id}`, {
+        method: "PATCH",
+        headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+        body: JSON.stringify({ flag: { flagStatus: "flagged" } })
+      });
+    }
+    markThreadDone(idx);
+  } catch(err) {
+    setThreadWorking(idx, "Error — try again");
+  }
+}
+
+function skipThread(idx) {
+  markThreadDone(idx);
+}
+
+async function replyAndFile(idx) {
+  const group = _threadGroups[idx];
+  if (!group) return;
+  const latest = group.emails.slice().sort((a, b) =>
+    new Date(b.msg.sentDateTime || b.msg.receivedDateTime || 0) -
+    new Date(a.msg.sentDateTime || a.msg.receivedDateTime || 0)
+  )[0];
+  if (!latest) return;
+  setThreadWorking(idx, "Opening reply…");
+  try {
+    const token = await ensureFreshToken();
+    const res = await fetch(`${GRAPH_BASE}/me/messages/${latest.msg.id}/createReplyAll`, {
+      method: "POST",
+      headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+      body: JSON.stringify({})
+    });
+    if (!res.ok) throw new Error("Graph " + res.status);
+    const draft = await res.json();
+    // Ask task pane to open the draft (requires Office.js mailbox context)
+    Office.context.ui.messageParent(JSON.stringify({ action: "open-item", restId: draft.id }));
+    group.armed = true;
+    renderThreadList();
+  } catch(err) {
+    setThreadWorking(idx, "Could not open reply — try again");
+  }
+}
+
+// Opening an email is delegated to the task pane (requires mailbox context)
+function openEmail(restId) {
+  Office.context.ui.messageParent(JSON.stringify({ action: "open-item", restId }));
+}
+
+// --- Main flows ---
+
+async function processSent() {
+  const statusEl = document.getElementById("status");
+  const foldersJson = localStorage.getItem("hmf_case_folders");
+  if (!foldersJson) {
+    statusEl.textContent = "No case folders cached. Use Refresh Folders in the task pane.";
+    return;
+  }
+  const lastRun = localStorage.getItem("hmf_sent_last_run");
+  if (!lastRun) {
+    statusEl.textContent = "No baseline set. Use Set Baseline in the task pane first.";
+    return;
+  }
+  statusEl.textContent = "Checking Sent Items…";
+  const newTimestamp = new Date().toISOString();
+  try {
+    const token = await ensureFreshToken();
+    const msgsRes = await fetch(
+      `${GRAPH_BASE}/me/mailFolders/SentItems/messages` +
+      `?$filter=sentDateTime gt ${lastRun}` +
+      `&$top=100&$orderby=sentDateTime asc` +
+      `&$select=id,subject,toRecipients,ccRecipients,sentDateTime,from,conversationId,flag`,
+      { headers: { Authorization: "Bearer " + token } }
+    );
+    if (!msgsRes.ok) throw new Error("Graph " + msgsRes.status);
+    const messages = (await msgsRes.json()).value || [];
+    localStorage.setItem("hmf_sent_last_run", newTimestamp);
+    const nonCalendar = messages.filter(m =>
+      !isCalendarMessage(m.subject || "") &&
+      (m.flag?.flagStatus || "notFlagged") === "notFlagged" &&
+      hasExternalRecipient(recipientAddresses(m), USER_DOMAIN)
+    );
+    if (nonCalendar.length === 0) {
+      statusEl.textContent = "No new sent emails to process.";
+      return;
+    }
+    const folders = parseFolders(foldersJson);
+    const groups = groupByThread(nonCalendar, folders);
+    statusEl.textContent = `${groups.length} thread${groups.length !== 1 ? "s" : ""} to review:`;
+    initThreadList(groups, folders, "sent");
+  } catch(e) {
+    statusEl.textContent = "Error: " + e.message;
+  }
+}
+
+async function processInbox() {
+  const statusEl = document.getElementById("status");
+  const foldersJson = localStorage.getItem("hmf_case_folders");
+  if (!foldersJson) {
+    statusEl.textContent = "No case folders cached. Use Refresh Folders in the task pane.";
+    return;
+  }
+  statusEl.textContent = "Scanning Inbox…";
+  try {
+    const token = await ensureFreshToken();
+    const msgsRes = await fetch(
+      `${GRAPH_BASE}/me/mailFolders/Inbox/messages` +
+      `?$select=id,subject,from,toRecipients,ccRecipients,receivedDateTime,conversationId,flag` +
+      `&$top=100&$orderby=receivedDateTime desc`,
+      { headers: { Authorization: "Bearer " + token } }
+    );
+    if (!msgsRes.ok) throw new Error("Graph " + msgsRes.status);
+    const messages = (await msgsRes.json()).value || [];
+    const nonCalendar = messages.filter(m =>
+      !isCalendarMessage(m.subject || "") &&
+      (m.flag?.flagStatus || "notFlagged") === "notFlagged"
+    );
+    if (nonCalendar.length === 0) {
+      statusEl.textContent = "Inbox is empty.";
+      return;
+    }
+    const folders = parseFolders(foldersJson);
+    const groups = groupByThread(nonCalendar, folders);
+    statusEl.textContent = `${groups.length} thread${groups.length !== 1 ? "s" : ""} to review:`;
+    initThreadList(groups, folders, "inbox");
+  } catch(e) {
+    statusEl.textContent = "Error: " + e.message;
+  }
+}
