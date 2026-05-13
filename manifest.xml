@@ -56,12 +56,11 @@
 
       <Hosts>
         <Host xsi:type="MailHost">
+          <Runtimes>
+            <Runtime resid="AutoFileRuntime.Url" lifetime="short"/>
+          </Runtimes>
           <DesktopFormFactor>
             <FunctionFile resid="Commands.Html"/>
-
-            <Runtimes>
-              <Runtime resid="AutoFileRuntime.Url" lifetime="short"/>
-            </Runtimes>
 
             <ExtensionPoint xsi:type="MessageReadCommandSurface">
               <OfficeTab id="TabDefault">
