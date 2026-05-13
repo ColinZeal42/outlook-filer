@@ -5,11 +5,6 @@ const GRAPH_BASE = "https://graph.microsoft.com/v1.0";
 const USER_DOMAIN = "hmflaw.com";
 
 Office.onReady(async () => {
-  if (localStorage.getItem("hmf_auto_file_pending")) {
-    location.href = "file-this.html";
-    return;
-  }
-
   document.getElementById("connectBtn").addEventListener("click", signIn);
   document.getElementById("refreshBtn").addEventListener("click", refreshFolders);
   document.getElementById("setBaselineBtn").addEventListener("click", setBaseline);
@@ -116,15 +111,6 @@ function renderBaselineSection() {
 
 function renderBehaviorSection() {
   populateSortPicker();
-  const autoFile = Office.context.roamingSettings.get("auto_file_sent") === "true";
-  const cb = document.getElementById("autoFileSent");
-  if (cb) cb.checked = autoFile;
-}
-
-function onAutoFileChange() {
-  const val = document.getElementById("autoFileSent").checked;
-  Office.context.roamingSettings.set("auto_file_sent", val ? "true" : "false");
-  Office.context.roamingSettings.saveAsync(() => {});
 }
 
 // --- Folder picker ---

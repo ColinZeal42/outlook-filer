@@ -4,16 +4,18 @@ const USER_DOMAIN = "hmflaw.com";
 
 Office.actions.associate("onMessageSent", onMessageSent);
 
-async function onMessageSent(event) {
+function onMessageSent(event) {
+  event.completed({ allowEvent: true });
+
   try {
     const enabled = Office.context.roamingSettings.get("auto_file_sent");
-    if (enabled !== "true") { event.completed({ allowEvent: true }); return; }
+    if (enabled !== "true") return;
 
     const item = Office.context.mailbox.item;
-    if (!item) { event.completed({ allowEvent: true }); return; }
+    if (!item) return;
 
     const foldersJson = Office.context.roamingSettings.get("case_folders");
-    if (!foldersJson) { event.completed({ allowEvent: true }); return; }
+    if (!foldersJson) return;
 
     const subject = item.subject || "";
     const fromAddr = (item.from && item.from.emailAddress) || "";
@@ -27,10 +29,7 @@ async function onMessageSent(event) {
       ...(item.cc || []).map(r => r.emailAddress)
     ].filter(Boolean);
 
-    if (!hasExternalRecipient(allAddresses, USER_DOMAIN)) {
-      event.completed();
-      return;
-    }
+    if (!hasExternalRecipient(allAddresses, USER_DOMAIN)) return;
 
     const folders = parseFolders(foldersJson);
     const match = matchFolder({ subject, participantText }, folders);
@@ -52,8 +51,6 @@ async function onMessageSent(event) {
   } catch(e) {
     // Never block send
   }
-
-  event.completed({ allowEvent: true });
 }
 
 function parseFolders(foldersJson) {

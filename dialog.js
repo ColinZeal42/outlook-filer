@@ -267,6 +267,9 @@ function renderThreadList() {
     html += '<span class="tl-pill">' + group.emails.length + '</span>';
     html += '<span class="tl-subject">' + subject + '</span>';
     html += matchHtml;
+    if (!group.done && !group.expanded) {
+      html += '<span class="tl-header-btns" id="tl-hbtns-' + idx + '">' + buildHeaderButtons(idx, group) + '</span>';
+    }
     html += '<span class="tl-chevron">' + chevron + '</span>';
     html += '</div>';
 
@@ -276,8 +279,8 @@ function renderThreadList() {
         const ea = (e.msg.from && e.msg.from.emailAddress) || {};
         const sender = esc(ea.name || ea.address || "Unknown");
         const dateStr = esc(formatDate(e.msg.sentDateTime || e.msg.receivedDateTime));
-        const badge = e.isForwarded ? '<span class="tl-badge tl-fwd">↪</span> '
-                    : e.isReplied   ? '<span class="tl-badge">↩</span> '
+        const badge = e.isForwarded ? '<span class="tl-badge tl-fwd">↪ Fwd</span> '
+                    : e.isReplied   ? '<span class="tl-badge">↩ Replied</span> '
                     : '';
         const bodyHtml = e.body === null
           ? '<em>Loading…</em>'
@@ -313,14 +316,28 @@ function renderThreadList() {
   el.innerHTML = html;
 }
 
+function buildHeaderButtons(idx, group) {
+  const folder = group.manualMatch || group.match;
+  let html = "";
+  if (!group.isInternal && folder) {
+    html += '<button class="tl-hbtn tl-file" onclick="event.stopPropagation();fileThread(' + idx + ')">File</button>';
+  }
+  html += '<button class="tl-hbtn tl-delete" onclick="event.stopPropagation();deleteThread(' + idx + ')">Delete</button>';
+  html += '<button class="tl-hbtn tl-skip" onclick="event.stopPropagation();skipThread(' + idx + ')">Ignore</button>';
+  return html;
+}
+
 function buildActionButtons(idx) {
   const group = _threadGroups[idx];
-  const checkedCount = group.emails.filter(e => e.checked).length;
+  const checked = group.emails.filter(e => e.checked);
+  const checkedCount = checked.length;
   const folder = group.manualMatch || group.match;
   const fileOff = (!folder || checkedCount === 0) ? " disabled" : "";
   const delOff  = checkedCount === 0 ? " disabled" : "";
   const flagOff = checkedCount === 0 ? " disabled" : "";
   const n = checkedCount > 0 ? " (" + checkedCount + ")" : "";
+  const allReplied = checkedCount > 0 && checked.every(e => e.isReplied);
+  const replyOff = (checkedCount === 0 || allReplied) ? " disabled" : "";
 
   const armedLabel = '<span class="tl-armed-label">↩ Reply opened — send reply, then confirm:</span>';
   let fileSection = "";
@@ -330,11 +347,11 @@ function buildActionButtons(idx) {
     fileSection = group.armed
       ? armedLabel + '<button class="tl-btn tl-confirm-file"' + fileOff + ' onclick="fileThread(' + idx + ')">Confirm File' + n + '</button>'
       : '<button class="tl-btn tl-file"' + fileOff + ' onclick="fileThread(' + idx + ')">File' + n + '</button>' +
-        '<button class="tl-btn tl-reply-file"' + fileOff + ' onclick="replyAndFile(' + idx + ')">Reply & File</button>';
+        '<button class="tl-btn tl-reply-file"' + fileOff + replyOff + ' onclick="replyAndFile(' + idx + ')">Reply & File</button>';
   } else {
     fileSection = group.armed
       ? armedLabel + '<button class="tl-btn tl-delete"' + delOff + ' onclick="deleteThread(' + idx + ')">Confirm Delete' + n + '</button>'
-      : '<button class="tl-btn tl-reply-delete"' + delOff + ' onclick="replyAndFile(' + idx + ')">Reply & Delete</button>';
+      : '<button class="tl-btn tl-reply-delete"' + replyOff + ' onclick="replyAndFile(' + idx + ')">Reply & Delete</button>';
   }
 
   const deleteBtn = _mode === "sent" ? "" :
@@ -406,6 +423,8 @@ function onFolderPick(idx, folderId) {
 function setThreadWorking(idx, msg) {
   const actionsEl = document.getElementById("tl-actions-" + idx);
   if (actionsEl) actionsEl.innerHTML = '<span class="tl-working">' + esc(msg) + '</span>';
+  const headerBtnsEl = document.getElementById("tl-hbtns-" + idx);
+  if (headerBtnsEl) headerBtnsEl.innerHTML = '<span class="tl-working" style="font-size:13px">' + esc(msg) + '</span>';
 }
 
 function markThreadDone(idx) {

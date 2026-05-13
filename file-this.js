@@ -11,40 +11,16 @@ let _bodyFetched = false;
 let _lastSubject = null;
 let _lastParticipantText = null;
 let _isInternal = false;
-let _pendingRestId = null;
-let _pendingTimestamp = null;
-let _pendingSubject = null;
 
 Office.onReady(async () => {
   document.getElementById("ver").textContent =
     typeof FILE_THIS_VERSION !== "undefined" ? FILE_THIS_VERSION : "?";
 
-  // Handle auto-file pending item (set by OnMessageSent event handler)
-  const raw = localStorage.getItem("hmf_auto_file_pending");
-  if (raw) {
-    localStorage.removeItem("hmf_auto_file_pending");
-    loadPendingItem(JSON.parse(raw));
-    // Still register storage listener for subsequent sends while pane stays open
-    registerStorageListener();
-    return;
-  }
-
   await loadCurrentItem();
   Office.context.mailbox.addHandlerAsync(Office.EventType.ItemChanged, onItemChanged);
-  registerStorageListener();
 });
 
-function registerStorageListener() {
-  window.addEventListener("storage", (e) => {
-    if (e.key === "hmf_auto_file_pending" && e.newValue) {
-      localStorage.removeItem("hmf_auto_file_pending");
-      loadPendingItem(JSON.parse(e.newValue));
-    }
-  });
-}
-
 function onItemChanged() {
-  if (_pendingRestId) return; // don't clobber a pending auto-file
   loadCurrentItem();
 }
 
@@ -54,7 +30,6 @@ async function loadCurrentItem() {
   _match = null;
   _manualMatch = null;
   _bodyFetched = false;
-  _pendingRestId = null;
 
   const item = Office.context.mailbox.item;
   _currentItem = item;
@@ -115,58 +90,6 @@ async function fetchBodyAndRefine() {
       updateMatchDisplay();
     }
   } catch(e) {}
-}
-
-// --- Pending mode: data from OnMessageSent event handler via localStorage ---
-
-function loadPendingItem(pending) {
-  _currentItem = null;
-  _pendingRestId = pending.restId;
-  _pendingTimestamp = pending.timestamp || null;
-  _pendingSubject = pending.subject || null;
-  _manualMatch = null;
-  _bodyFetched = false;
-  _isInternal = false;
-
-  const foldersJson = Office.context.roamingSettings.get("case_folders") || "[]";
-  _folders = parseFolders(foldersJson);
-  _match = pending.match ? (_folders.find(f => f.id === pending.match.id) || null) : null;
-
-  _lastSubject = pending.subject;
-  _lastParticipantText = pending.fromName + " " + pending.fromAddr;
-
-  renderUI({ subject: pending.subject, fromName: pending.fromName, fromAddr: pending.fromAddr });
-
-  if (!_match) {
-    fetchBodyAndRefineById(pending.restId);
-  }
-}
-
-async function fetchBodyAndRefineById(restId) {
-  _bodyFetched = true;
-  try {
-    const token = await ensureFreshToken();
-    const res = await fetch(`${GRAPH_BASE}/me/messages/${restId}?$select=body`, {
-      headers: { Authorization: "Bearer " + token, Prefer: 'outlook.body-content-type="text"' }
-    });
-    if (!res.ok) return;
-    const data = await res.json();
-    const bodyText = (data.body && data.body.content) || "";
-    const refined = matchFolder({ subject: _lastSubject, participantText: _lastParticipantText, bodyText }, _folders);
-    if (refined && !_manualMatch) {
-      _match = refined;
-      updateMatchDisplay();
-    }
-  } catch(e) {}
-}
-
-function resumeNormalMode() {
-  _pendingRestId = null;
-  _pendingTimestamp = null;
-  _pendingSubject = null;
-  loadCurrentItem().then(() => {
-    Office.context.mailbox.addHandlerAsync(Office.EventType.ItemChanged, onItemChanged);
-  });
 }
 
 // --- Shared UI ---
@@ -254,43 +177,15 @@ function onFolderChange() {
   }
 }
 
-async function resolveRestId(token) {
-  if (!_pendingRestId) {
-    return Office.context.mailbox.convertToRestId(
-      _currentItem.itemId, Office.MailboxEnums.RestVersion.v2_0
-    );
-  }
-  // Try stored restId first; if the send changed the message ID, fall back to
-  // searching recent Sent Items by subject and approximate send time.
-  const probe = await fetch(`${GRAPH_BASE}/me/messages/${_pendingRestId}?$select=id`, {
-    headers: { Authorization: "Bearer " + token }
-  });
-  if (probe.ok) return _pendingRestId;
-
-  // Fallback: find the message in Sent Items
-  const since = _pendingTimestamp
-    ? new Date(_pendingTimestamp - 5000).toISOString()
-    : new Date(Date.now() - 120000).toISOString();
-  const search = await fetch(
-    `${GRAPH_BASE}/me/mailFolders/SentItems/messages` +
-    `?$filter=sentDateTime ge ${since}&$select=id,subject&$top=20&$orderby=sentDateTime desc`,
-    { headers: { Authorization: "Bearer " + token } }
-  );
-  if (!search.ok) throw new Error("Could not locate sent message");
-  const msgs = (await search.json()).value || [];
-  const match = msgs.find(m => m.subject === _pendingSubject);
-  if (!match) throw new Error("Sent message not found — try again in a moment");
-  return match.id;
-}
-
 async function fileIt() {
   const folder = _manualMatch || _match;
   if (!folder) return;
-  const wasPending = !!_pendingRestId;
   setWorking("Filing…");
   try {
     const token = await ensureFreshToken();
-    const restId = await resolveRestId(token);
+    const restId = Office.context.mailbox.convertToRestId(
+      _currentItem.itemId, Office.MailboxEnums.RestVersion.v2_0
+    );
     const res = await fetch(`${GRAPH_BASE}/me/messages/${restId}/move`, {
       method: "POST",
       headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
@@ -298,18 +193,18 @@ async function fileIt() {
     });
     if (!res.ok) throw new Error("Graph " + res.status);
     setDone("Filed to " + folder.displayName);
-    if (wasPending) setTimeout(resumeNormalMode, 2000);
   } catch(e) {
     setError("Error — " + e.message);
   }
 }
 
 async function deleteIt() {
-  const wasPending = !!_pendingRestId;
   setWorking("Deleting…");
   try {
     const token = await ensureFreshToken();
-    const restId = await resolveRestId(token);
+    const restId = Office.context.mailbox.convertToRestId(
+      _currentItem.itemId, Office.MailboxEnums.RestVersion.v2_0
+    );
     const res = await fetch(`${GRAPH_BASE}/me/messages/${restId}/move`, {
       method: "POST",
       headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
@@ -317,19 +212,13 @@ async function deleteIt() {
     });
     if (!res.ok) throw new Error("Graph " + res.status);
     setDone("Moved to Deleted Items");
-    if (wasPending) setTimeout(resumeNormalMode, 2000);
   } catch(e) {
     setError("Error — " + e.message);
   }
 }
 
 function ignoreIt() {
-  const wasPending = !!_pendingRestId;
-  if (wasPending) {
-    resumeNormalMode();
-  } else {
-    renderIdle();
-  }
+  renderIdle();
 }
 
 function setWorking(msg) {
