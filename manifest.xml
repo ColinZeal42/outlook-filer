@@ -7,7 +7,7 @@
   xsi:type="MailApp">
 
   <Id>c41a2c93-abb6-4276-8f11-a47e71353c65</Id>
-  <Version>3.1.0.0</Version>
+  <Version>3.1.1.0</Version>
   <ProviderName>HMF</ProviderName>
   <DefaultLocale>en-US</DefaultLocale>
   <DisplayName DefaultValue="HMF Email Filer"/>
@@ -115,6 +115,24 @@
                     </Action>
                   </Control>
                 </Group>
+                <Group id="hmfFileThisGroup">
+                  <Label resid="FileThisLabel"/>
+                  <Control xsi:type="Button" id="hmfFileThisBtn">
+                    <Label resid="FileThisLabel"/>
+                    <Supertip>
+                      <Title resid="FileThisLabel"/>
+                      <Description resid="FileThisDesc"/>
+                    </Supertip>
+                    <Icon>
+                      <bt:Image size="16" resid="FileThisIcon16"/>
+                      <bt:Image size="32" resid="FileThisIcon32"/>
+                      <bt:Image size="80" resid="FileThisIcon80"/>
+                    </Icon>
+                    <Action xsi:type="ShowTaskpane">
+                      <SourceLocation resid="FileThisUrl"/>
+                    </Action>
+                  </Control>
+                </Group>
               </OfficeTab>
             </ExtensionPoint>
 
@@ -133,23 +151,29 @@
           <bt:Image id="InboxIcon16" DefaultValue="https://ColinZeal42.github.io/outlook-filer/assets/icon-inbox-16.png"/>
           <bt:Image id="InboxIcon32" DefaultValue="https://ColinZeal42.github.io/outlook-filer/assets/icon-inbox-32.png"/>
           <bt:Image id="InboxIcon80" DefaultValue="https://ColinZeal42.github.io/outlook-filer/assets/icon-inbox-80.png"/>
+          <bt:Image id="FileThisIcon16" DefaultValue="https://ColinZeal42.github.io/outlook-filer/assets/icon-this-16.png"/>
+          <bt:Image id="FileThisIcon32" DefaultValue="https://ColinZeal42.github.io/outlook-filer/assets/icon-this-32.png"/>
+          <bt:Image id="FileThisIcon80" DefaultValue="https://ColinZeal42.github.io/outlook-filer/assets/icon-this-80.png"/>
         </bt:Images>
         <bt:Urls>
           <bt:Url id="Commands.Html" DefaultValue="https://ColinZeal42.github.io/outlook-filer/commands.html?v=20"/>
           <bt:Url id="Setup.Html" DefaultValue="https://ColinZeal42.github.io/outlook-filer/setup.html"/>
           <bt:Url id="FileSentUrl" DefaultValue="https://ColinZeal42.github.io/outlook-filer/setup.html?mode=sent"/>
           <bt:Url id="FileInboxUrl" DefaultValue="https://ColinZeal42.github.io/outlook-filer/setup.html?mode=inbox"/>
+          <bt:Url id="FileThisUrl" DefaultValue="https://ColinZeal42.github.io/outlook-filer/file-this.html"/>
         </bt:Urls>
         <bt:ShortStrings>
           <bt:String id="AddInName" DefaultValue="HMF Email Filer"/>
           <bt:String id="FilingGroupLabel" DefaultValue="File Emails"/>
           <bt:String id="FileSentLabel" DefaultValue="File Sent"/>
           <bt:String id="FileInboxLabel" DefaultValue="File Inbox"/>
+          <bt:String id="FileThisLabel" DefaultValue="File This"/>
         </bt:ShortStrings>
         <bt:LongStrings>
           <bt:String id="AddInDescription" DefaultValue="Files sent emails into matching case folders."/>
           <bt:String id="FileSentDesc" DefaultValue="File sent emails into case folders"/>
           <bt:String id="FileInboxDesc" DefaultValue="File inbox emails into case folders"/>
+          <bt:String id="FileThisDesc" DefaultValue="File the currently open email into a case folder"/>
         </bt:LongStrings>
       </Resources>
 

@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8"/>
+  <title>File This Email</title>
+  <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+  <script>
+    var FILE_THIS_VERSION = "v1";
+    var s = document.createElement("script");
+    s.src = "file-this.js?t=" + Date.now();
+    document.head.appendChild(s);
+  </script>
+  <style>
+    body { font-family: 'Segoe UI', sans-serif; padding: 16px; color: #1a1a1a; margin: 0; font-size: 13px; }
+    h2 { font-size: 15px; margin: 0 0 14px; font-weight: 700; }
+    .email-subject { font-size: 14px; font-weight: 700; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .email-from { font-size: 12px; color: #555; margin-bottom: 14px; }
+    .match-head { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: #888; margin-bottom: 4px; }
+    .match-value { font-size: 13px; font-weight: 600; color: #0078d4; margin-bottom: 8px; min-height: 18px; }
+    .match-value.internal { color: #a4262c; font-style: italic; }
+    .match-value.nomatch { color: #aaa; font-style: italic; font-weight: 400; }
+    .folder-row { margin-bottom: 12px; }
+    select { width: 100%; padding: 5px 7px; font-size: 12px; border: 1px solid #ccc; border-radius: 3px; font-family: 'Segoe UI', sans-serif; background: #fff; color: #1a1a1a; box-sizing: border-box; }
+    .actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+    .btn { padding: 6px 14px; border: none; border-radius: 3px; font-size: 12px; cursor: pointer; font-family: 'Segoe UI', sans-serif; }
+    .btn:disabled { opacity: 0.4; cursor: default; }
+    .btn-file { background: #107c10; color: #fff; }
+    .btn-delete { background: #a4262c; color: #fff; }
+    .btn-ignore { background: #605e5c; color: #fff; }
+    .working { font-size: 12px; color: #555; }
+    .status { font-size: 12px; margin-top: 10px; min-height: 16px; }
+    .status.success { color: #107c10; }
+    .status.error { color: #a4262c; }
+    #ver { margin-top: 20px; font-size: 11px; color: #bbb; }
+  </style>
+</head>
+<body>
+  <h2>File This Email</h2>
+  <div id="email-subject" class="email-subject"></div>
+  <div id="email-from" class="email-from"></div>
+  <div id="match-head" class="match-head" style="display:none">Filing destination</div>
+  <div id="match-value" class="match-value"></div>
+  <div id="folder-row" class="folder-row" style="display:none">
+    <select id="folderPicker" onchange="onFolderChange()"></select>
+  </div>
+  <div id="actions" class="actions"></div>
+  <div id="status" class="status"></div>
+  <div id="ver"></div>
+</body>
+</html>
