@@ -259,18 +259,33 @@ function renderThreadList() {
       : effectiveFolder
         ? '<span class="tl-match">→ ' + esc(effectiveFolder.displayName) + '</span>'
         : '<span class="tl-match tl-no-match">(no match)</span>';
-    const chevron = group.expanded ? "▲" : "▼";
+    const chevron = group.expanded ? "▼" : "▶";
     const headerAttrs = group.done ? "" : ' onclick="toggleThread(' + idx + ')" style="cursor:pointer"';
 
     html += '<div class="tl-group' + doneClass + '" id="tg-' + idx + '">';
     html += '<div class="tl-header"' + headerAttrs + '>';
-    html += '<span class="tl-pill">' + group.emails.length + '</span>';
-    html += '<span class="tl-subject">' + subject + '</span>';
-    html += matchHtml;
-    if (!group.done && !group.expanded) {
-      html += '<span class="tl-header-btns" id="tl-hbtns-' + idx + '">' + buildHeaderButtons(idx, group) + '</span>';
-    }
     html += '<span class="tl-chevron">' + chevron + '</span>';
+
+    if (!group.done && !group.expanded) {
+      // Collapsed: folder (as File button if match) → Delete → Ignore → subject
+      if (group.isInternal) {
+        html += '<span class="tl-match tl-internal">Internal</span>';
+      } else if (effectiveFolder) {
+        html += '<button class="tl-hbtn tl-file tl-hbtn-folder" onclick="event.stopPropagation();fileThread(' + idx + ')">→ ' + esc(effectiveFolder.displayName) + '</button>';
+      } else {
+        html += '<span class="tl-match tl-no-match">(no match)</span>';
+      }
+      html += '<span class="tl-header-btns" id="tl-hbtns-' + idx + '">';
+      html += '<button class="tl-hbtn tl-delete" onclick="event.stopPropagation();deleteThread(' + idx + ')">Delete</button>';
+      html += '<button class="tl-hbtn tl-skip" onclick="event.stopPropagation();skipThread(' + idx + ')">Ignore</button>';
+      html += '</span>';
+      html += '<span class="tl-subject">' + subject + '</span>';
+    } else {
+      // Expanded or done: folder label + subject
+      html += matchHtml;
+      html += '<span class="tl-subject">' + subject + '</span>';
+    }
+
     html += '</div>';
 
     if (group.expanded && !group.done) {
@@ -316,16 +331,6 @@ function renderThreadList() {
   el.innerHTML = html;
 }
 
-function buildHeaderButtons(idx, group) {
-  const folder = group.manualMatch || group.match;
-  let html = "";
-  if (!group.isInternal && folder) {
-    html += '<button class="tl-hbtn tl-file" onclick="event.stopPropagation();fileThread(' + idx + ')">File</button>';
-  }
-  html += '<button class="tl-hbtn tl-delete" onclick="event.stopPropagation();deleteThread(' + idx + ')">Delete</button>';
-  html += '<button class="tl-hbtn tl-skip" onclick="event.stopPropagation();skipThread(' + idx + ')">Ignore</button>';
-  return html;
-}
 
 function buildActionButtons(idx) {
   const group = _threadGroups[idx];
