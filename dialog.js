@@ -483,11 +483,12 @@ function setThreadWorking(idx, msg) {
 function markThreadDone(idx) {
   const group = _threadGroups[idx];
   if (!group) return;
+  const wasExpanded = group.expanded;
   group.done = true;
   group.expanded = false;
 
   const nextIdx = _threadGroups.findIndex((g, i) => i > idx && !g.done);
-  if (nextIdx !== -1) _threadGroups[nextIdx].expanded = true;
+  if (nextIdx !== -1 && wasExpanded) _threadGroups[nextIdx].expanded = true;
 
   renderThreadList();
 
