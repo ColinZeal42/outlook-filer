@@ -7,7 +7,7 @@
   xsi:type="MailApp">
 
   <Id>c41a2c93-abb6-4276-8f11-a47e71353c65</Id>
-  <Version>3.1.1.0</Version>
+  <Version>3.2.0.0</Version>
   <ProviderName>HMF</ProviderName>
   <DefaultLocale>en-US</DefaultLocale>
   <DisplayName DefaultValue="HMF Email Filer"/>
@@ -58,6 +58,10 @@
         <Host xsi:type="MailHost">
           <DesktopFormFactor>
             <FunctionFile resid="Commands.Html"/>
+
+            <Runtimes>
+              <Runtime resid="AutoFileRuntime.Url" lifetime="short"/>
+            </Runtimes>
 
             <ExtensionPoint xsi:type="MessageReadCommandSurface">
               <OfficeTab id="TabDefault">
@@ -136,6 +140,12 @@
               </OfficeTab>
             </ExtensionPoint>
 
+            <ExtensionPoint xsi:type="LaunchEvent">
+              <LaunchEvents>
+                <LaunchEvent Type="OnMessageSent" FunctionName="onMessageSent"/>
+              </LaunchEvents>
+            </ExtensionPoint>
+
           </DesktopFormFactor>
         </Host>
       </Hosts>
@@ -161,6 +171,7 @@
           <bt:Url id="FileSentUrl" DefaultValue="https://ColinZeal42.github.io/outlook-filer/setup.html?mode=sent"/>
           <bt:Url id="FileInboxUrl" DefaultValue="https://ColinZeal42.github.io/outlook-filer/setup.html?mode=inbox"/>
           <bt:Url id="FileThisUrl" DefaultValue="https://ColinZeal42.github.io/outlook-filer/file-this.html"/>
+          <bt:Url id="AutoFileRuntime.Url" DefaultValue="https://ColinZeal42.github.io/outlook-filer/auto-file-events.js"/>
         </bt:Urls>
         <bt:ShortStrings>
           <bt:String id="AddInName" DefaultValue="HMF Email Filer"/>

@@ -20,7 +20,7 @@
     .ss-label { display: block; font-size: 12px; color: #555; margin-bottom: 4px; }
     .ss-select { flex: 1; font-size: 12px; padding: 4px 6px; border: 1px solid #ccc; border-radius: 3px; font-family: 'Segoe UI', sans-serif; min-width: 0; }
     .ss-select:disabled { background: #f3f3f3; color: #aaa; }
-    .ss-checkbox-label { display: flex; align-items: flex-start; gap: 7px; font-size: 12px; color: #aaa; margin-top: 10px; cursor: default; }
+    .ss-checkbox-label { display: flex; align-items: flex-start; gap: 7px; font-size: 12px; color: #555; margin-top: 10px; cursor: pointer; }
     .ss-checkbox-label input { margin-top: 2px; flex-shrink: 0; }
     .btn { padding: 6px 14px; border: none; border-radius: 3px; font-size: 12px; cursor: pointer; font-family: 'Segoe UI', sans-serif; }
     .btn:disabled { opacity: 0.5; cursor: default; }
@@ -68,8 +68,8 @@
       <option value="folder">By target folder</option>
     </select>
     <label class="ss-checkbox-label">
-      <input type="checkbox" id="autoFileSent" disabled>
-      Auto-file sent emails at send time <em>(coming soon)</em>
+      <input type="checkbox" id="autoFileSent" onchange="onAutoFileChange()">
+      Auto-file sent emails at send time
     </label>
   </section>
 

@@ -11,22 +11,48 @@ let _bodyFetched = false;
 let _lastSubject = null;
 let _lastParticipantText = null;
 let _isInternal = false;
+let _pendingRestId = null;
 
 Office.onReady(async () => {
   document.getElementById("ver").textContent =
     typeof FILE_THIS_VERSION !== "undefined" ? FILE_THIS_VERSION : "?";
+
+  // Handle auto-file pending item (set by OnMessageSent event handler)
+  const raw = localStorage.getItem("hmf_auto_file_pending");
+  if (raw) {
+    localStorage.removeItem("hmf_auto_file_pending");
+    loadPendingItem(JSON.parse(raw));
+    // Still register storage listener for subsequent sends while pane stays open
+    registerStorageListener();
+    return;
+  }
+
   await loadCurrentItem();
   Office.context.mailbox.addHandlerAsync(Office.EventType.ItemChanged, onItemChanged);
+  registerStorageListener();
 });
 
+function registerStorageListener() {
+  window.addEventListener("storage", (e) => {
+    if (e.key === "hmf_auto_file_pending" && e.newValue) {
+      localStorage.removeItem("hmf_auto_file_pending");
+      loadPendingItem(JSON.parse(e.newValue));
+    }
+  });
+}
+
 function onItemChanged() {
+  if (_pendingRestId) return; // don't clobber a pending auto-file
   loadCurrentItem();
 }
+
+// --- Normal mode: read from live mailbox item ---
 
 async function loadCurrentItem() {
   _match = null;
   _manualMatch = null;
   _bodyFetched = false;
+  _pendingRestId = null;
 
   const item = Office.context.mailbox.item;
   _currentItem = item;
@@ -76,10 +102,7 @@ async function fetchBodyAndRefine() {
       _currentItem.itemId, Office.MailboxEnums.RestVersion.v2_0
     );
     const res = await fetch(`${GRAPH_BASE}/me/messages/${restId}?$select=body`, {
-      headers: {
-        Authorization: "Bearer " + token,
-        Prefer: 'outlook.body-content-type="text"'
-      }
+      headers: { Authorization: "Bearer " + token, Prefer: 'outlook.body-content-type="text"' }
     });
     if (!res.ok) return;
     const data = await res.json();
@@ -91,6 +114,56 @@ async function fetchBodyAndRefine() {
     }
   } catch(e) {}
 }
+
+// --- Pending mode: data from OnMessageSent event handler via localStorage ---
+
+function loadPendingItem(pending) {
+  _currentItem = null;
+  _pendingRestId = pending.restId;
+  _manualMatch = null;
+  _bodyFetched = false;
+  _isInternal = false;
+
+  const foldersJson = Office.context.roamingSettings.get("case_folders") || "[]";
+  _folders = parseFolders(foldersJson);
+  _match = pending.match ? (_folders.find(f => f.id === pending.match.id) || null) : null;
+
+  _lastSubject = pending.subject;
+  _lastParticipantText = pending.fromName + " " + pending.fromAddr;
+
+  renderUI({ subject: pending.subject, fromName: pending.fromName, fromAddr: pending.fromAddr });
+
+  if (!_match) {
+    fetchBodyAndRefineById(pending.restId);
+  }
+}
+
+async function fetchBodyAndRefineById(restId) {
+  _bodyFetched = true;
+  try {
+    const token = await ensureFreshToken();
+    const res = await fetch(`${GRAPH_BASE}/me/messages/${restId}?$select=body`, {
+      headers: { Authorization: "Bearer " + token, Prefer: 'outlook.body-content-type="text"' }
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    const bodyText = (data.body && data.body.content) || "";
+    const refined = matchFolder({ subject: _lastSubject, participantText: _lastParticipantText, bodyText }, _folders);
+    if (refined && !_manualMatch) {
+      _match = refined;
+      updateMatchDisplay();
+    }
+  } catch(e) {}
+}
+
+function resumeNormalMode() {
+  _pendingRestId = null;
+  loadCurrentItem().then(() => {
+    Office.context.mailbox.addHandlerAsync(Office.EventType.ItemChanged, onItemChanged);
+  });
+}
+
+// --- Shared UI ---
 
 function renderUI({ subject, fromName, fromAddr }) {
   document.getElementById("email-subject").textContent = subject || "(no subject)";
@@ -148,12 +221,9 @@ function renderFolderPicker(selectedId) {
 function updateMatchDisplay() {
   const effectiveFolder = _manualMatch || _match;
   if (!effectiveFolder) return;
-  const matchValueEl = document.getElementById("match-value");
-  matchValueEl.textContent = "→ " + effectiveFolder.displayName;
-  matchValueEl.className = "match-value";
+  document.getElementById("match-value").textContent = "→ " + effectiveFolder.displayName;
+  document.getElementById("match-value").className = "match-value";
   renderFolderPicker(effectiveFolder.id);
-  const fileBtn = document.getElementById("fileBtn");
-  if (fileBtn) fileBtn.disabled = false;
   const actionsEl = document.getElementById("actions");
   if (actionsEl.querySelector("#fileBtn")) {
     actionsEl.innerHTML =
@@ -181,10 +251,11 @@ function onFolderChange() {
 async function fileIt() {
   const folder = _manualMatch || _match;
   if (!folder) return;
+  const wasPending = !!_pendingRestId;
   setWorking("Filing…");
   try {
     const token = await ensureFreshToken();
-    const restId = Office.context.mailbox.convertToRestId(
+    const restId = _pendingRestId || Office.context.mailbox.convertToRestId(
       _currentItem.itemId, Office.MailboxEnums.RestVersion.v2_0
     );
     const res = await fetch(`${GRAPH_BASE}/me/messages/${restId}/move`, {
@@ -194,16 +265,18 @@ async function fileIt() {
     });
     if (!res.ok) throw new Error("Graph " + res.status);
     setDone("Filed to " + folder.displayName);
+    if (wasPending) setTimeout(resumeNormalMode, 2000);
   } catch(e) {
     setError("Error — " + e.message);
   }
 }
 
 async function deleteIt() {
+  const wasPending = !!_pendingRestId;
   setWorking("Deleting…");
   try {
     const token = await ensureFreshToken();
-    const restId = Office.context.mailbox.convertToRestId(
+    const restId = _pendingRestId || Office.context.mailbox.convertToRestId(
       _currentItem.itemId, Office.MailboxEnums.RestVersion.v2_0
     );
     const res = await fetch(`${GRAPH_BASE}/me/messages/${restId}/move`, {
@@ -213,13 +286,19 @@ async function deleteIt() {
     });
     if (!res.ok) throw new Error("Graph " + res.status);
     setDone("Moved to Deleted Items");
+    if (wasPending) setTimeout(resumeNormalMode, 2000);
   } catch(e) {
     setError("Error — " + e.message);
   }
 }
 
 function ignoreIt() {
-  renderIdle();
+  const wasPending = !!_pendingRestId;
+  if (wasPending) {
+    resumeNormalMode();
+  } else {
+    renderIdle();
+  }
 }
 
 function setWorking(msg) {
