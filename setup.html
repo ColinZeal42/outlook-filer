@@ -5,7 +5,7 @@
   <title>HMF Email Filer</title>
   <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
   <script>
-    var SETUP_VERSION = "v29";
+    var SETUP_VERSION = "v30";
     var s = document.createElement("script");
     s.src = "setup.js?t=" + Date.now();
     document.head.appendChild(s);
@@ -25,6 +25,8 @@
     .btn-primary { background: #0078d4; color: #fff; }
     .btn-secondary { background: #f3f3f3; color: #1a1a1a; border: 1px solid #ccc; }
     #ver { margin-top: 20px; font-size: 11px; color: #bbb; }
+    .ss-pinned-row { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: #1a1a1a; padding: 2px 0; }
+    .ss-pin-remove { border: none; background: none; color: #a4262c; cursor: pointer; font-size: 13px; padding: 0 2px; }
   </style>
 </head>
 <body>
@@ -47,6 +49,17 @@
       <button id="refreshBtn" class="btn btn-secondary" title="Refresh case folders" disabled>↻</button>
     </div>
     <div id="folder-count" class="ss-sub"></div>
+  </section>
+
+  <section class="ss">
+    <div class="ss-head">Pinned Folders</div>
+    <div id="pinned-list" class="ss-sub"></div>
+    <div class="ss-row" style="margin-top:6px">
+      <select id="pinnedFolderPicker" class="ss-select" disabled>
+        <option value="">Choose folder to pin…</option>
+      </select>
+      <button id="pinBtn" class="btn btn-secondary" onclick="addPinnedFolder()" disabled>Pin</button>
+    </div>
   </section>
 
   <section class="ss">

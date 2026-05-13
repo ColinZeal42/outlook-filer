@@ -137,7 +137,21 @@ function renderUI({ subject, fromName, fromAddr }) {
 
 function renderFolderPicker(selectedId) {
   const picker = document.getElementById("folderPicker");
+  const pinned = JSON.parse(Office.context.roamingSettings.get("pinned_folders") || "[]");
   picker.innerHTML = '<option value="">Choose folder…</option>';
+  if (pinned.length > 0) {
+    for (const f of pinned) {
+      const opt = document.createElement("option");
+      opt.value = f.id;
+      opt.textContent = "★ " + f.displayName;
+      if (f.id === selectedId) opt.selected = true;
+      picker.appendChild(opt);
+    }
+    const sep = document.createElement("option");
+    sep.disabled = true;
+    sep.textContent = "──────────";
+    picker.appendChild(sep);
+  }
   for (const f of _folders) {
     const opt = document.createElement("option");
     opt.value = f.id;
@@ -165,7 +179,8 @@ function updateMatchDisplay() {
 function onFolderChange() {
   const picker = document.getElementById("folderPicker");
   const folderId = picker.value;
-  _manualMatch = folderId ? (_folders.find(f => f.id === folderId) || null) : null;
+  const pinned = JSON.parse(Office.context.roamingSettings.get("pinned_folders") || "[]");
+  _manualMatch = folderId ? ([...pinned, ..._folders].find(f => f.id === folderId) || null) : null;
   const fileBtn = document.getElementById("fileBtn");
   if (fileBtn) fileBtn.disabled = !folderId;
   if (_manualMatch) {

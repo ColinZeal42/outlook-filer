@@ -72,6 +72,7 @@ async function checkStatus() {
     accountEl.style.color = "green";
     connectBtn.style.display = "none";
     renderFolderSection();
+    renderPinnedSection();
     renderBaselineSection();
     renderBehaviorSection();
   } else if (refreshToken) {
@@ -195,13 +196,90 @@ async function fetchCaseFolders(token) {
     }
   }
 
-  const res = await fetch(
-    `${GRAPH_BASE}/me/mailFolders/${rootId}?$expand=childFolders($top=100)`,
-    { headers: { Authorization: "Bearer " + token } }
-  );
-  if (!res.ok) throw new Error("Graph " + res.status);
-  const data = await res.json();
-  return (data.childFolders || []).map(f => ({ displayName: f.displayName, id: f.id }));
+  const result = [];
+  await fetchFolderChildren(token, rootId, "", result);
+  result.sort((a, b) => a.displayName.localeCompare(b.displayName));
+  return result;
+}
+
+async function fetchFolderChildren(token, folderId, prefix, result) {
+  const children = [];
+  let url = `${GRAPH_BASE}/me/mailFolders/${folderId}/childFolders` +
+            `?$top=100&$select=id,displayName,childFolderCount`;
+  while (url) {
+    const res = await fetch(url, { headers: { Authorization: "Bearer " + token } });
+    if (!res.ok) throw new Error("Graph " + res.status);
+    const data = await res.json();
+    children.push(...(data.value || []));
+    url = data["@odata.nextLink"] || null;
+  }
+  await Promise.all(children.map(async child => {
+    const fullName = prefix ? prefix + " / " + child.displayName : child.displayName;
+    result.push({ id: child.id, displayName: fullName });
+    if (child.childFolderCount > 0) {
+      await fetchFolderChildren(token, child.id, fullName, result);
+    }
+  }));
+}
+
+// --- Pinned folders ---
+
+function renderPinnedSection() {
+  const pinned = JSON.parse(Office.context.roamingSettings.get("pinned_folders") || "[]");
+  const listEl = document.getElementById("pinned-list");
+  if (!listEl) return;
+  listEl.innerHTML = pinned.length === 0
+    ? '<span style="color:#aaa">None</span>'
+    : pinned.map(f =>
+        '<div class="ss-pinned-row">' + esc(f.displayName) +
+        ' <button class="ss-pin-remove" onclick="removePinnedFolder(\'' + esc(f.id) + '\')">✕</button>' +
+        '</div>'
+      ).join("");
+  const pinBtn = document.getElementById("pinBtn");
+  if (pinBtn) pinBtn.disabled = pinned.length >= 8;
+  populatePinnedPicker(pinned);
+}
+
+async function populatePinnedPicker(pinned) {
+  const picker = document.getElementById("pinnedFolderPicker");
+  if (!picker) return;
+  picker.disabled = true;
+  try {
+    const token = await ensureFreshToken();
+    const folders = await fetchRootFolders(token);
+    const pinnedIds = new Set(pinned.map(f => f.id));
+    picker.innerHTML = '<option value="">Choose folder to pin…</option>';
+    for (const f of folders) {
+      if (!pinnedIds.has(f.id)) {
+        const opt = document.createElement("option");
+        opt.value = f.id;
+        opt.textContent = f.displayName;
+        picker.appendChild(opt);
+      }
+    }
+    picker.disabled = pinned.length >= 8;
+  } catch(e) {
+    picker.innerHTML = '<option value="">Could not load folders</option>';
+  }
+}
+
+function addPinnedFolder() {
+  const picker = document.getElementById("pinnedFolderPicker");
+  const folderId = picker.value;
+  if (!folderId) return;
+  const folderName = picker.options[picker.selectedIndex].textContent;
+  const pinned = JSON.parse(Office.context.roamingSettings.get("pinned_folders") || "[]");
+  if (pinned.length >= 8 || pinned.find(f => f.id === folderId)) return;
+  pinned.push({ id: folderId, displayName: folderName });
+  Office.context.roamingSettings.set("pinned_folders", JSON.stringify(pinned));
+  Office.context.roamingSettings.saveAsync(() => renderPinnedSection());
+}
+
+function removePinnedFolder(id) {
+  const pinned = JSON.parse(Office.context.roamingSettings.get("pinned_folders") || "[]");
+  const updated = pinned.filter(f => f.id !== id);
+  Office.context.roamingSettings.set("pinned_folders", JSON.stringify(updated));
+  Office.context.roamingSettings.saveAsync(() => renderPinnedSection());
 }
 
 async function refreshFolders() {
@@ -258,6 +336,7 @@ function openDialog(mode) {
   localStorage.setItem("hmf_case_folders", Office.context.roamingSettings.get("case_folders") || "[]");
   localStorage.setItem("hmf_mode", mode);
   localStorage.setItem("hmf_sort_order", Office.context.roamingSettings.get("sort_order") || "date-desc");
+  localStorage.setItem("hmf_pinned_folders", Office.context.roamingSettings.get("pinned_folders") || "[]");
   const sentLastRun = Office.context.roamingSettings.get("sent_last_run");
   if (sentLastRun) localStorage.setItem("hmf_sent_last_run", sentLastRun);
 

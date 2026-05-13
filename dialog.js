@@ -5,10 +5,12 @@ const USER_DOMAIN = "hmflaw.com";
 
 let _threadGroups = [];
 let _threadFolders = [];
+let _pinnedFolders = [];
 let _mode = "inbox";
 let _sortOrder = "date-desc";
 
 Office.onReady(() => {
+  _pinnedFolders = JSON.parse(localStorage.getItem("hmf_pinned_folders") || "[]");
   _mode = localStorage.getItem("hmf_mode") || "inbox";
   if (_mode === "sent") {
     processSent();
@@ -300,10 +302,7 @@ function renderThreadList() {
       if (!group.isInternal) {
         const selectedId = (group.manualMatch || group.match || {}).id || "";
         html += '<select class="tl-folder-select" onchange="onFolderPick(' + idx + ', this.value)">';
-        html += '<option value=""' + (!selectedId ? ' selected' : '') + '>Choose folder…</option>';
-        _threadFolders.forEach(f => {
-          html += '<option value="' + esc(f.id) + '"' + (f.id === selectedId ? ' selected' : '') + '>' + esc(f.displayName) + '</option>';
-        });
+        html += buildFolderOptions(selectedId);
         html += '</select>';
       }
 
@@ -317,6 +316,20 @@ function renderThreadList() {
   el.innerHTML = html;
 }
 
+
+function buildFolderOptions(selectedId) {
+  let html = '<option value=""' + (!selectedId ? ' selected' : '') + '>Choose folder…</option>';
+  if (_pinnedFolders.length > 0) {
+    _pinnedFolders.forEach(f => {
+      html += '<option value="' + esc(f.id) + '"' + (f.id === selectedId ? ' selected' : '') + '>★ ' + esc(f.displayName) + '</option>';
+    });
+    html += '<option disabled>──────────</option>';
+  }
+  _threadFolders.forEach(f => {
+    html += '<option value="' + esc(f.id) + '"' + (f.id === selectedId ? ' selected' : '') + '>' + esc(f.displayName) + '</option>';
+  });
+  return html;
+}
 
 function buildStripHTML(idx, group) {
   const folder = group.manualMatch || group.match;
@@ -341,10 +354,7 @@ function buildStripHTML(idx, group) {
   } else {
     const selectedId = (group.manualMatch || group.match || {}).id || "";
     html += '<select class="strip-select" onchange="onStripFolderPick(' + idx + ', this)">';
-    if (!folder) html += '<option value="" selected>Choose folder…</option>';
-    _threadFolders.forEach(f => {
-      html += '<option value="' + esc(f.id) + '"' + (f.id === selectedId ? ' selected' : '') + '>' + esc(f.displayName) + '</option>';
-    });
+    html += buildFolderOptions(selectedId);
     html += '</select>';
     html += '<div class="strip-sep"></div>';
     html += '<button class="s-btn s-file"' + fileOff + ' onclick="fileThread(' + idx + ')">File</button>';
@@ -363,7 +373,7 @@ function onStripFolderPick(idx, selectEl) {
   const group = _threadGroups[idx];
   if (!group) return;
   const folderId = selectEl.value;
-  group.manualMatch = folderId ? (_threadFolders.find(f => f.id === folderId) || null) : null;
+  group.manualMatch = folderId ? ([..._pinnedFolders, ..._threadFolders].find(f => f.id === folderId) || null) : null;
   const effectiveFolder = group.manualMatch || group.match;
 
   const matchEl = document.querySelector('#tg-' + idx + ' .tl-header .tl-match');
@@ -469,7 +479,7 @@ function onCheckChange(idx) {
 function onFolderPick(idx, folderId) {
   const group = _threadGroups[idx];
   if (!group) return;
-  group.manualMatch = folderId ? (_threadFolders.find(f => f.id === folderId) || null) : null;
+  group.manualMatch = folderId ? ([..._pinnedFolders, ..._threadFolders].find(f => f.id === folderId) || null) : null;
   renderThreadList();
 }
 
