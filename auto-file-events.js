@@ -7,13 +7,13 @@ Office.actions.associate("onMessageSent", onMessageSent);
 async function onMessageSent(event) {
   try {
     const enabled = Office.context.roamingSettings.get("auto_file_sent");
-    if (enabled !== "true") { event.completed(); return; }
+    if (enabled !== "true") { event.completed({ allowEvent: true }); return; }
 
     const item = Office.context.mailbox.item;
-    if (!item) { event.completed(); return; }
+    if (!item) { event.completed({ allowEvent: true }); return; }
 
     const foldersJson = Office.context.roamingSettings.get("case_folders");
-    if (!foldersJson) { event.completed(); return; }
+    if (!foldersJson) { event.completed({ allowEvent: true }); return; }
 
     const subject = item.subject || "";
     const fromAddr = (item.from && item.from.emailAddress) || "";
@@ -44,15 +44,16 @@ async function onMessageSent(event) {
       subject,
       fromName,
       fromAddr,
-      match: match ? { id: match.id, displayName: match.displayName } : null
+      match: match ? { id: match.id, displayName: match.displayName } : null,
+      timestamp: Date.now()
     }));
 
     Office.addin.showAsTaskpane().catch(() => {});
   } catch(e) {
-    // Never block post-send flow
+    // Never block send
   }
 
-  event.completed();
+  event.completed({ allowEvent: true });
 }
 
 function parseFolders(foldersJson) {

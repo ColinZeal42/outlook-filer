@@ -141,8 +141,9 @@
 
             <ExtensionPoint xsi:type="LaunchEvent">
               <LaunchEvents>
-                <LaunchEvent Type="OnMessageSent" FunctionName="onMessageSent"/>
+                <LaunchEvent Type="OnMessageSend" FunctionName="onMessageSent" SendMode="SoftBlock"/>
               </LaunchEvents>
+              <SourceLocation resid="AutoFileRuntime.Url"/>
             </ExtensionPoint>
 
           </DesktopFormFactor>

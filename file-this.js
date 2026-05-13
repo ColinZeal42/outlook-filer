@@ -12,6 +12,8 @@ let _lastSubject = null;
 let _lastParticipantText = null;
 let _isInternal = false;
 let _pendingRestId = null;
+let _pendingTimestamp = null;
+let _pendingSubject = null;
 
 Office.onReady(async () => {
   document.getElementById("ver").textContent =
@@ -120,6 +122,8 @@ async function fetchBodyAndRefine() {
 function loadPendingItem(pending) {
   _currentItem = null;
   _pendingRestId = pending.restId;
+  _pendingTimestamp = pending.timestamp || null;
+  _pendingSubject = pending.subject || null;
   _manualMatch = null;
   _bodyFetched = false;
   _isInternal = false;
@@ -158,6 +162,8 @@ async function fetchBodyAndRefineById(restId) {
 
 function resumeNormalMode() {
   _pendingRestId = null;
+  _pendingTimestamp = null;
+  _pendingSubject = null;
   loadCurrentItem().then(() => {
     Office.context.mailbox.addHandlerAsync(Office.EventType.ItemChanged, onItemChanged);
   });
@@ -248,6 +254,35 @@ function onFolderChange() {
   }
 }
 
+async function resolveRestId(token) {
+  if (!_pendingRestId) {
+    return Office.context.mailbox.convertToRestId(
+      _currentItem.itemId, Office.MailboxEnums.RestVersion.v2_0
+    );
+  }
+  // Try stored restId first; if the send changed the message ID, fall back to
+  // searching recent Sent Items by subject and approximate send time.
+  const probe = await fetch(`${GRAPH_BASE}/me/messages/${_pendingRestId}?$select=id`, {
+    headers: { Authorization: "Bearer " + token }
+  });
+  if (probe.ok) return _pendingRestId;
+
+  // Fallback: find the message in Sent Items
+  const since = _pendingTimestamp
+    ? new Date(_pendingTimestamp - 5000).toISOString()
+    : new Date(Date.now() - 120000).toISOString();
+  const search = await fetch(
+    `${GRAPH_BASE}/me/mailFolders/SentItems/messages` +
+    `?$filter=sentDateTime ge ${since}&$select=id,subject&$top=20&$orderby=sentDateTime desc`,
+    { headers: { Authorization: "Bearer " + token } }
+  );
+  if (!search.ok) throw new Error("Could not locate sent message");
+  const msgs = (await search.json()).value || [];
+  const match = msgs.find(m => m.subject === _pendingSubject);
+  if (!match) throw new Error("Sent message not found — try again in a moment");
+  return match.id;
+}
+
 async function fileIt() {
   const folder = _manualMatch || _match;
   if (!folder) return;
@@ -255,9 +290,7 @@ async function fileIt() {
   setWorking("Filing…");
   try {
     const token = await ensureFreshToken();
-    const restId = _pendingRestId || Office.context.mailbox.convertToRestId(
-      _currentItem.itemId, Office.MailboxEnums.RestVersion.v2_0
-    );
+    const restId = await resolveRestId(token);
     const res = await fetch(`${GRAPH_BASE}/me/messages/${restId}/move`, {
       method: "POST",
       headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
@@ -276,9 +309,7 @@ async function deleteIt() {
   setWorking("Deleting…");
   try {
     const token = await ensureFreshToken();
-    const restId = _pendingRestId || Office.context.mailbox.convertToRestId(
-      _currentItem.itemId, Office.MailboxEnums.RestVersion.v2_0
-    );
+    const restId = await resolveRestId(token);
     const res = await fetch(`${GRAPH_BASE}/me/messages/${restId}/move`, {
       method: "POST",
       headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
