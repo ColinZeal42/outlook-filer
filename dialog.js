@@ -265,6 +265,7 @@ function renderThreadList() {
     html += '<div class="tl-group' + doneClass + '" id="tg-' + idx + '">';
     html += '<div class="tl-header"' + headerAttrs + '>';
     html += '<span class="tl-chevron">' + chevron + '</span>';
+    html += '<span class="tl-pill">' + group.emails.length + '</span>';
 
     if (!group.done && !group.expanded) {
       // Collapsed: folder (as File button if match) → Delete → Ignore → subject
