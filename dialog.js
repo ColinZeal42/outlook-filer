@@ -266,28 +266,13 @@ function renderThreadList() {
     html += '<div class="tl-header"' + headerAttrs + '>';
     html += '<span class="tl-chevron">' + chevron + '</span>';
     html += '<span class="tl-pill">' + group.emails.length + '</span>';
+    html += '<span class="tl-subject">' + subject + '</span>';
+    html += matchHtml;
+    html += '</div>';
 
     if (!group.done && !group.expanded) {
-      // Collapsed: folder (as File button if match) → Delete → Ignore → subject
-      if (group.isInternal) {
-        html += '<span class="tl-match tl-internal">Internal</span>';
-      } else if (effectiveFolder) {
-        html += '<button class="tl-hbtn tl-file tl-hbtn-folder" onclick="event.stopPropagation();fileThread(' + idx + ')">→ ' + esc(effectiveFolder.displayName) + '</button>';
-      } else {
-        html += '<span class="tl-match tl-no-match">(no match)</span>';
-      }
-      html += '<span class="tl-header-btns" id="tl-hbtns-' + idx + '">';
-      html += '<button class="tl-hbtn tl-delete" onclick="event.stopPropagation();deleteThread(' + idx + ')">Delete</button>';
-      html += '<button class="tl-hbtn tl-skip" onclick="event.stopPropagation();skipThread(' + idx + ')">Ignore</button>';
-      html += '</span>';
-      html += '<span class="tl-subject">' + subject + '</span>';
-    } else {
-      // Expanded or done: folder label + subject
-      html += matchHtml;
-      html += '<span class="tl-subject">' + subject + '</span>';
+      html += buildStripHTML(idx, group);
     }
-
-    html += '</div>';
 
     if (group.expanded && !group.done) {
       html += '<div class="tl-body">';
@@ -332,6 +317,68 @@ function renderThreadList() {
   el.innerHTML = html;
 }
 
+
+function buildStripHTML(idx, group) {
+  const folder = group.manualMatch || group.match;
+  const fileOff = folder ? "" : " disabled";
+  const forceShow = group.armed ? "display:flex;" : "";
+
+  let html = '<div class="action-strip" id="tl-strip-' + idx + '" style="' + forceShow + '" onclick="event.stopPropagation()">';
+
+  if (group.armed) {
+    html += '<span class="strip-armed-note">↩ Reply opened — send reply, then confirm:</span>';
+    if (!group.isInternal) {
+      const label = folder ? 'Confirm File → ' + esc(folder.displayName) : 'Confirm File';
+      html += '<button class="s-btn s-confirm"' + fileOff + ' onclick="fileThread(' + idx + ')">' + label + '</button>';
+    } else {
+      html += '<button class="s-btn s-del" onclick="deleteThread(' + idx + ')">Confirm Delete</button>';
+    }
+    html += '<button class="s-btn s-skip" onclick="skipThread(' + idx + ')">Cancel</button>';
+  } else if (group.isInternal) {
+    html += '<button class="s-btn s-reply-del" onclick="replyAndFile(' + idx + ')">Reply &amp; Delete</button>';
+    html += '<button class="s-btn s-del" onclick="deleteThread(' + idx + ')">Delete</button>';
+    html += '<button class="s-btn s-skip" onclick="skipThread(' + idx + ')">Ignore</button>';
+  } else {
+    const selectedId = (group.manualMatch || group.match || {}).id || "";
+    html += '<select class="strip-select" onchange="onStripFolderPick(' + idx + ', this)">';
+    if (!folder) html += '<option value="" selected>Choose folder…</option>';
+    _threadFolders.forEach(f => {
+      html += '<option value="' + esc(f.id) + '"' + (f.id === selectedId ? ' selected' : '') + '>' + esc(f.displayName) + '</option>';
+    });
+    html += '</select>';
+    html += '<div class="strip-sep"></div>';
+    html += '<button class="s-btn s-file"' + fileOff + ' onclick="fileThread(' + idx + ')">File</button>';
+    if (_mode !== "sent") {
+      html += '<button class="s-btn s-reply-file"' + fileOff + ' onclick="replyAndFile(' + idx + ')">Reply &amp; File</button>';
+    }
+    html += '<button class="s-btn s-del" onclick="deleteThread(' + idx + ')">Delete</button>';
+    html += '<button class="s-btn s-skip" onclick="skipThread(' + idx + ')">Ignore</button>';
+  }
+
+  html += '</div>';
+  return html;
+}
+
+function onStripFolderPick(idx, selectEl) {
+  const group = _threadGroups[idx];
+  if (!group) return;
+  const folderId = selectEl.value;
+  group.manualMatch = folderId ? (_threadFolders.find(f => f.id === folderId) || null) : null;
+  const effectiveFolder = group.manualMatch || group.match;
+
+  const matchEl = document.querySelector('#tg-' + idx + ' .tl-header .tl-match');
+  if (matchEl) {
+    matchEl.textContent = effectiveFolder ? '→ ' + effectiveFolder.displayName : '(no match)';
+    matchEl.className = effectiveFolder ? 'tl-match' : 'tl-match tl-no-match';
+  }
+
+  const strip = document.getElementById('tl-strip-' + idx);
+  if (strip) {
+    strip.querySelectorAll('.s-file, .s-reply-file').forEach(btn => {
+      btn.disabled = !effectiveFolder;
+    });
+  }
+}
 
 function buildActionButtons(idx) {
   const group = _threadGroups[idx];
@@ -429,8 +476,8 @@ function onFolderPick(idx, folderId) {
 function setThreadWorking(idx, msg) {
   const actionsEl = document.getElementById("tl-actions-" + idx);
   if (actionsEl) actionsEl.innerHTML = '<span class="tl-working">' + esc(msg) + '</span>';
-  const headerBtnsEl = document.getElementById("tl-hbtns-" + idx);
-  if (headerBtnsEl) headerBtnsEl.innerHTML = '<span class="tl-working" style="font-size:13px">' + esc(msg) + '</span>';
+  const stripEl = document.getElementById("tl-strip-" + idx);
+  if (stripEl) stripEl.innerHTML = '<span class="tl-working">' + esc(msg) + '</span>';
 }
 
 function markThreadDone(idx) {

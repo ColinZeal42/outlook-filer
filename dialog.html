@@ -18,9 +18,20 @@
     .tl-group { border: 1px solid #e0e0e0; border-radius: 4px; margin-bottom: 9px; overflow: hidden; }
     .tl-done { opacity: 0.42; pointer-events: none; }
     .tl-header { display: flex; align-items: center; gap: 8px; padding: 9px 12px; background: #f9f9f9; font-size: 16px; user-select: none; }
-    .tl-header-btns { display: flex; gap: 6px; flex-shrink: 0; align-items: center; }
-    .tl-hbtn { padding: 6px 16px; border: none; border-radius: 3px; color: #fff; font-size: 15px; cursor: pointer; font-family: 'Segoe UI', sans-serif; white-space: nowrap; }
-    .tl-hbtn-folder { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .action-strip { display: none; padding: 8px 14px; background: #f0f4f9; border-top: 1px solid #dce8f5; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .tl-group:not(.tl-done):hover .action-strip { display: flex; }
+    .strip-select { font-size: 14px; padding: 5px 8px; border: 1px solid #b0c8e0; border-radius: 3px; background: #fff; font-family: 'Segoe UI', sans-serif; min-width: 160px; max-width: 230px; color: #1a1a1a; cursor: pointer; }
+    .strip-select:focus { outline: none; border-color: #0078d4; }
+    .strip-sep { width: 1px; height: 22px; background: #c8d8ea; flex-shrink: 0; }
+    .strip-armed-note { font-size: 13px; color: #0078d4; font-style: italic; flex-basis: 100%; margin-bottom: 2px; }
+    .s-btn { padding: 5px 15px; border: none; border-radius: 3px; color: #fff; font-size: 14px; cursor: pointer; font-family: 'Segoe UI', sans-serif; font-weight: 500; white-space: nowrap; flex-shrink: 0; }
+    .s-btn:disabled { background: #bbb !important; cursor: default; }
+    .s-file { background: #107c10; }
+    .s-reply-file { background: #0078d4; }
+    .s-del { background: #a4262c; }
+    .s-reply-del { background: #a4262c; }
+    .s-confirm { background: #107c10; font-weight: 700; }
+    .s-skip { background: #605e5c; }
     .tl-header:hover { background: #f0f0f0; }
     .tl-pill { background: #0078d4; color: #fff; border-radius: 10px; padding: 2px 8px; font-size: 13px; font-weight: 700; flex-shrink: 0; }
     .tl-subject { font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
