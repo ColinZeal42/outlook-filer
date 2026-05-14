@@ -142,18 +142,18 @@
 
       <Resources>
         <bt:Images>
-          <bt:Image id="Icon16" DefaultValue="https://ColinZeal42.github.io/outlook-filer/assets/icon-64.png"/>
-          <bt:Image id="Icon32" DefaultValue="https://ColinZeal42.github.io/outlook-filer/assets/icon-64.png"/>
-          <bt:Image id="Icon80" DefaultValue="https://ColinZeal42.github.io/outlook-filer/assets/icon-128.png"/>
-          <bt:Image id="SentIcon16" DefaultValue="https://ColinZeal42.github.io/outlook-filer/assets/icon-sent-16.png"/>
-          <bt:Image id="SentIcon32" DefaultValue="https://ColinZeal42.github.io/outlook-filer/assets/icon-sent-32.png"/>
-          <bt:Image id="SentIcon80" DefaultValue="https://ColinZeal42.github.io/outlook-filer/assets/icon-sent-80.png"/>
-          <bt:Image id="InboxIcon16" DefaultValue="https://ColinZeal42.github.io/outlook-filer/assets/icon-inbox-16.png"/>
-          <bt:Image id="InboxIcon32" DefaultValue="https://ColinZeal42.github.io/outlook-filer/assets/icon-inbox-32.png"/>
-          <bt:Image id="InboxIcon80" DefaultValue="https://ColinZeal42.github.io/outlook-filer/assets/icon-inbox-80.png"/>
-          <bt:Image id="FileThisIcon16" DefaultValue="https://ColinZeal42.github.io/outlook-filer/assets/icon-this-16.png"/>
-          <bt:Image id="FileThisIcon32" DefaultValue="https://ColinZeal42.github.io/outlook-filer/assets/icon-this-32.png"/>
-          <bt:Image id="FileThisIcon80" DefaultValue="https://ColinZeal42.github.io/outlook-filer/assets/icon-this-80.png"/>
+          <bt:Image id="Icon16" DefaultValue="https://ColinZeal42.github.io/outlook-filer/assets/icon-64.png?v=2"/>
+          <bt:Image id="Icon32" DefaultValue="https://ColinZeal42.github.io/outlook-filer/assets/icon-64.png?v=2"/>
+          <bt:Image id="Icon80" DefaultValue="https://ColinZeal42.github.io/outlook-filer/assets/icon-128.png?v=2"/>
+          <bt:Image id="SentIcon16" DefaultValue="https://ColinZeal42.github.io/outlook-filer/assets/icon-sent-16.png?v=2"/>
+          <bt:Image id="SentIcon32" DefaultValue="https://ColinZeal42.github.io/outlook-filer/assets/icon-sent-32.png?v=2"/>
+          <bt:Image id="SentIcon80" DefaultValue="https://ColinZeal42.github.io/outlook-filer/assets/icon-sent-80.png?v=2"/>
+          <bt:Image id="InboxIcon16" DefaultValue="https://ColinZeal42.github.io/outlook-filer/assets/icon-inbox-16.png?v=2"/>
+          <bt:Image id="InboxIcon32" DefaultValue="https://ColinZeal42.github.io/outlook-filer/assets/icon-inbox-32.png?v=2"/>
+          <bt:Image id="InboxIcon80" DefaultValue="https://ColinZeal42.github.io/outlook-filer/assets/icon-inbox-80.png?v=2"/>
+          <bt:Image id="FileThisIcon16" DefaultValue="https://ColinZeal42.github.io/outlook-filer/assets/icon-this-16.png?v=2"/>
+          <bt:Image id="FileThisIcon32" DefaultValue="https://ColinZeal42.github.io/outlook-filer/assets/icon-this-32.png?v=2"/>
+          <bt:Image id="FileThisIcon80" DefaultValue="https://ColinZeal42.github.io/outlook-filer/assets/icon-this-80.png?v=2"/>
         </bt:Images>
         <bt:Urls>
           <bt:Url id="Commands.Html" DefaultValue="https://ColinZeal42.github.io/outlook-filer/commands.html?v=20"/>
