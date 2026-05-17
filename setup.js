@@ -73,6 +73,7 @@ async function checkStatus() {
     connectBtn.style.display = "none";
     renderFolderSection();
     renderPinnedSection();
+    renderLearnedSection();
     renderBaselineSection();
     renderBehaviorSection();
   } else if (refreshToken) {
@@ -224,6 +225,26 @@ async function fetchFolderChildren(token, folderId, prefix, result) {
 
 // --- Pinned folders ---
 
+function renderLearnedSection() {
+  const learned = JSON.parse(Office.context.roamingSettings.get("learned_contacts") || "{}");
+  const listEl = document.getElementById("learned-list");
+  if (!listEl) return;
+  const entries = Object.entries(learned);
+  listEl.innerHTML = entries.length === 0
+    ? '<span style="color:#aaa">None</span>'
+    : entries.map(([addr, val]) =>
+        '<div class="ss-pinned-row">' + esc(addr) + ' → ' + esc(val.folderName) +
+        ' <button class="ss-pin-remove" onclick="removeLearned(\'' + esc(addr) + '\')">✕</button></div>'
+      ).join("");
+}
+
+function removeLearned(addr) {
+  const learned = JSON.parse(Office.context.roamingSettings.get("learned_contacts") || "{}");
+  delete learned[addr];
+  Office.context.roamingSettings.set("learned_contacts", JSON.stringify(learned));
+  Office.context.roamingSettings.saveAsync(() => renderLearnedSection());
+}
+
 function renderPinnedSection() {
   const pinned = JSON.parse(Office.context.roamingSettings.get("pinned_folders") || "[]");
   const listEl = document.getElementById("pinned-list");
@@ -337,6 +358,7 @@ function openDialog(mode) {
   localStorage.setItem("hmf_mode", mode);
   localStorage.setItem("hmf_sort_order", Office.context.roamingSettings.get("sort_order") || "date-desc");
   localStorage.setItem("hmf_pinned_folders", Office.context.roamingSettings.get("pinned_folders") || "[]");
+  localStorage.setItem("hmf_learned_contacts", Office.context.roamingSettings.get("learned_contacts") || "{}");
   const sentLastRun = Office.context.roamingSettings.get("sent_last_run");
   if (sentLastRun) localStorage.setItem("hmf_sent_last_run", sentLastRun);
 
@@ -360,12 +382,16 @@ function openDialog(mode) {
         const tok = localStorage.getItem("hmf_access_token");
         const exp = localStorage.getItem("hmf_token_expiry");
         const ref = localStorage.getItem("hmf_refresh_token");
+        const learned = localStorage.getItem("hmf_learned_contacts");
         if (tok) {
           Office.context.roamingSettings.set("access_token", tok);
           Office.context.roamingSettings.set("token_expiry", exp || "0");
           if (ref) Office.context.roamingSettings.set("refresh_token", ref);
-          Office.context.roamingSettings.saveAsync(() => {});
         }
+        if (learned && learned !== "{}") {
+          Office.context.roamingSettings.set("learned_contacts", learned);
+        }
+        Office.context.roamingSettings.saveAsync(() => renderLearnedSection());
       });
     }
   );

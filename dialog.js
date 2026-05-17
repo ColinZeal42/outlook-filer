@@ -6,11 +6,13 @@ const USER_DOMAIN = "hmflaw.com";
 let _threadGroups = [];
 let _threadFolders = [];
 let _pinnedFolders = [];
+let _learnedContacts = {};
 let _mode = "inbox";
 let _sortOrder = "date-desc";
 
 Office.onReady(() => {
   _pinnedFolders = JSON.parse(localStorage.getItem("hmf_pinned_folders") || "[]");
+  _learnedContacts = JSON.parse(localStorage.getItem("hmf_learned_contacts") || "{}");
   _mode = localStorage.getItem("hmf_mode") || "inbox";
   if (_mode === "sent") {
     processSent();
@@ -172,6 +174,56 @@ function matchFolder(email, folders) {
   return null;
 }
 
+function matchAllFolders(email, folders) {
+  const texts = [email.subject, email.participantText, email.bodyText || ""].filter(Boolean);
+  const seen = new Set();
+  const matches = [];
+  for (let t = 0; t < texts.length; t++) {
+    const lower = texts[t].toLowerCase();
+    for (let f = 0; f < folders.length; f++) {
+      if (seen.has(folders[f].id)) continue;
+      const kws = folders[f].keywords;
+      for (let k = 0; k < kws.length; k++) {
+        if (lower.indexOf(kws[k]) !== -1) {
+          seen.add(folders[f].id);
+          matches.push(folders[f]);
+          break;
+        }
+      }
+    }
+  }
+  return matches;
+}
+
+function resolveAmbiguity(externalAddresses, candidates, learnedContacts) {
+  for (const addr of externalAddresses) {
+    const entry = learnedContacts[addr.toLowerCase()];
+    if (entry) {
+      const found = candidates.find(c => c.id === entry.folderId);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+function getGroupExternalAddresses(group) {
+  const seen = new Set();
+  const addrs = [];
+  for (const e of group.emails) {
+    const fromAddr = (e.msg.from && e.msg.from.emailAddress && e.msg.from.emailAddress.address) || "";
+    const recips = recipientAddresses(e.msg);
+    for (const a of [fromAddr, ...recips]) {
+      if (!a) continue;
+      const lower = a.toLowerCase();
+      if (!seen.has(lower) && !lower.endsWith("@" + USER_DOMAIN)) {
+        seen.add(lower);
+        addrs.push(lower);
+      }
+    }
+  }
+  return addrs;
+}
+
 // --- Thread grouping ---
 
 function groupByThread(messages, folders) {
@@ -193,32 +245,64 @@ function groupByThread(messages, folders) {
 
   return order.map(cid => {
     const group = map[cid];
-    const counts = {};
-    for (const e of group.emails) {
-      const allRecip = [...(e.msg.toRecipients || []), ...(e.msg.ccRecipients || [])];
-      const ea = (e.msg.from && e.msg.from.emailAddress) || {};
-      const pt = [ea.name || "", ea.address || "",
-        ...allRecip.map(r => { const a = r.emailAddress || {}; return (a.name || "") + " " + (a.address || ""); })
-      ].join(" ");
-      const m = matchFolder({ subject: e.msg.subject || "", participantText: pt }, folders);
-      if (m) {
-        if (!counts[m.id]) counts[m.id] = { folder: m, n: 0 };
-        counts[m.id].n++;
-      }
-    }
-    const hits = Object.values(counts);
-    const best = hits.length ? hits.reduce((a, b) => b.n > a.n ? b : a).folder : null;
 
     const isInternal = group.emails.every(e => {
       const fromAddr = (e.msg.from && e.msg.from.emailAddress && e.msg.from.emailAddress.address) || "";
       return !hasExternalRecipient([fromAddr, ...recipientAddresses(e.msg)], USER_DOMAIN);
     });
 
+    // Collect union of all candidate folders across all emails in the group
+    const candidateMap = {};
+    for (const e of group.emails) {
+      const allRecip = [...(e.msg.toRecipients || []), ...(e.msg.ccRecipients || [])];
+      const ea = (e.msg.from && e.msg.from.emailAddress) || {};
+      const pt = [ea.name || "", ea.address || "",
+        ...allRecip.map(r => { const a = r.emailAddress || {}; return (a.name || "") + " " + (a.address || ""); })
+      ].join(" ");
+      const emailCandidates = matchAllFolders({ subject: e.msg.subject || "", participantText: pt }, folders);
+      for (const c of emailCandidates) {
+        if (!candidateMap[c.id]) candidateMap[c.id] = c;
+      }
+    }
+    const candidates = Object.values(candidateMap);
+
+    let match = null;
+    let ambiguous = false;
+    let learnedMatch = false;
+
+    if (!isInternal) {
+      if (candidates.length === 1) {
+        match = candidates[0];
+      } else if (candidates.length > 1) {
+        const externalAddrs = [];
+        const seen = new Set();
+        for (const e of group.emails) {
+          const fromAddr = (e.msg.from && e.msg.from.emailAddress && e.msg.from.emailAddress.address) || "";
+          const recips = recipientAddresses(e.msg);
+          for (const a of [fromAddr, ...recips]) {
+            if (!a) continue;
+            const lower = a.toLowerCase();
+            if (!seen.has(lower) && !lower.endsWith("@" + USER_DOMAIN)) { seen.add(lower); externalAddrs.push(lower); }
+          }
+        }
+        const resolved = resolveAmbiguity(externalAddrs, candidates, _learnedContacts);
+        if (resolved) {
+          match = resolved;
+          learnedMatch = true;
+        } else {
+          ambiguous = true;
+        }
+      }
+    }
+
     return {
       conversationId: cid,
       subject: group.subject,
       emails: group.emails,
-      match: best,
+      match,
+      candidates,
+      ambiguous,
+      learnedMatch,
       manualMatch: null,
       armed: false,
       expanded: false,
@@ -258,9 +342,13 @@ function renderThreadList() {
     const effectiveFolder = group.manualMatch || group.match;
     const matchHtml = group.isInternal
       ? '<span class="tl-match tl-internal">Internal</span>'
-      : effectiveFolder
-        ? '<span class="tl-match">→ ' + esc(effectiveFolder.displayName) + '</span>'
-        : '<span class="tl-match tl-no-match">(no match)</span>';
+      : effectiveFolder && group.learnedMatch && !group.manualMatch
+        ? '<span class="tl-match tl-learned">→ ' + esc(effectiveFolder.displayName) + ' ✓</span>'
+        : effectiveFolder
+          ? '<span class="tl-match">→ ' + esc(effectiveFolder.displayName) + '</span>'
+          : group.ambiguous
+            ? '<span class="tl-match tl-ambiguous">(pick folder)</span>'
+            : '<span class="tl-match tl-no-match">(no match)</span>';
     const chevron = group.expanded ? "▼" : "▶";
     const headerAttrs = group.done ? "" : ' onclick="toggleThread(' + idx + ')" style="cursor:pointer"';
 
@@ -353,9 +441,18 @@ function buildStripHTML(idx, group) {
     html += '<button class="s-btn s-skip" onclick="skipThread(' + idx + ')">Ignore</button>';
   } else {
     const selectedId = (group.manualMatch || group.match || {}).id || "";
-    html += '<select class="strip-select" onchange="onStripFolderPick(' + idx + ', this)">';
-    html += buildFolderOptions(selectedId);
-    html += '</select>';
+    if (group.ambiguous && !group.manualMatch) {
+      html += '<select class="strip-select strip-disambig" onchange="onStripFolderPick(' + idx + ', this)">';
+      html += '<option value="">' + group.candidates.length + ' matches — choose one…</option>';
+      for (const c of group.candidates) {
+        html += '<option value="' + esc(c.id) + '">' + esc(c.displayName) + '</option>';
+      }
+      html += '</select>';
+    } else {
+      html += '<select class="strip-select" onchange="onStripFolderPick(' + idx + ', this)">';
+      html += buildFolderOptions(selectedId);
+      html += '</select>';
+    }
     html += '<div class="strip-sep"></div>';
     html += '<button class="s-btn s-file"' + fileOff + ' onclick="fileThread(' + idx + ')">File</button>';
     if (_mode !== "sent") {
@@ -373,7 +470,12 @@ function onStripFolderPick(idx, selectEl) {
   const group = _threadGroups[idx];
   if (!group) return;
   const folderId = selectEl.value;
-  group.manualMatch = folderId ? ([..._pinnedFolders, ..._threadFolders].find(f => f.id === folderId) || null) : null;
+  const isDisambig = selectEl.classList.contains("strip-disambig");
+  if (isDisambig) {
+    group.manualMatch = folderId ? (group.candidates.find(f => f.id === folderId) || null) : null;
+  } else {
+    group.manualMatch = folderId ? ([..._pinnedFolders, ..._threadFolders].find(f => f.id === folderId) || null) : null;
+  }
   const effectiveFolder = group.manualMatch || group.match;
 
   const matchEl = document.querySelector('#tg-' + idx + ' .tl-header .tl-match');
@@ -515,6 +617,15 @@ function markThreadDone(idx) {
 
 // --- Actions ---
 
+function learnFromDisambiguation(group, folder) {
+  const learned = JSON.parse(localStorage.getItem("hmf_learned_contacts") || "{}");
+  const externalAddrs = getGroupExternalAddresses(group);
+  for (const addr of externalAddrs) {
+    learned[addr] = { folderId: folder.id, folderName: folder.displayName };
+  }
+  localStorage.setItem("hmf_learned_contacts", JSON.stringify(learned));
+}
+
 async function fileThread(idx) {
   const group = _threadGroups[idx];
   if (!group) return;
@@ -522,6 +633,11 @@ async function fileThread(idx) {
   if (!folder) return;
   const checked = group.emails.filter(e => e.checked);
   if (!checked.length) return;
+  if (group.ambiguous) {
+    learnFromDisambiguation(group, folder);
+    group.ambiguous = false;
+    group.learnedMatch = true;
+  }
   setThreadWorking(idx, "Filing…");
   try {
     const token = await ensureFreshToken();

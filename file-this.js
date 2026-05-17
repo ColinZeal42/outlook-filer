@@ -11,6 +11,10 @@ let _bodyFetched = false;
 let _lastSubject = null;
 let _lastParticipantText = null;
 let _isInternal = false;
+let _candidates = [];
+let _ambiguous = false;
+let _learnedMatch = false;
+let _externalAddresses = [];
 
 Office.onReady(async () => {
   document.getElementById("ver").textContent =
@@ -30,6 +34,10 @@ async function loadCurrentItem() {
   _match = null;
   _manualMatch = null;
   _bodyFetched = false;
+  _candidates = [];
+  _ambiguous = false;
+  _learnedMatch = false;
+  _externalAddresses = [];
 
   const item = Office.context.mailbox.item;
   _currentItem = item;
@@ -62,11 +70,36 @@ async function loadCurrentItem() {
   ].filter(Boolean);
   _isInternal = !hasExternalRecipient(allAddresses, USER_DOMAIN);
 
-  _match = _isInternal ? null : matchFolder({ subject, participantText }, _folders);
+  _externalAddresses = allAddresses.filter(
+    a => a && !a.toLowerCase().endsWith("@" + USER_DOMAIN)
+  );
+
+  if (!_isInternal) {
+    const allCandidates = matchAllFolders({ subject, participantText }, _folders);
+    _candidates = allCandidates;
+
+    if (allCandidates.length === 0) {
+      _match = null;
+    } else if (allCandidates.length === 1) {
+      _match = allCandidates[0];
+    } else {
+      const learnedContacts = JSON.parse(
+        Office.context.roamingSettings.get("learned_contacts") || "{}"
+      );
+      const resolved = resolveAmbiguity(_externalAddresses, allCandidates, learnedContacts);
+      if (resolved) {
+        _match = resolved;
+        _learnedMatch = true;
+      } else {
+        _match = null;
+        _ambiguous = true;
+      }
+    }
+  }
 
   renderUI({ subject, fromName, fromAddr });
 
-  if (!_bodyFetched && !_isInternal && !_match) {
+  if (!_bodyFetched && !_isInternal && !_match && !_ambiguous) {
     fetchBodyAndRefine();
   }
 }
@@ -114,6 +147,15 @@ function renderUI({ subject, fromName, fromAddr }) {
     actionsEl.innerHTML =
       '<button class="btn btn-delete" onclick="deleteIt()">Delete</button>' +
       '<button class="btn btn-ignore" onclick="ignoreIt()">Ignore</button>';
+  } else if (effectiveFolder && _learnedMatch && !_manualMatch) {
+    matchValueEl.textContent = "→ " + effectiveFolder.displayName + " ✓";
+    matchValueEl.className = "match-value match-learned";
+    renderFolderPicker(effectiveFolder.id);
+    folderRow.style.display = "block";
+    actionsEl.innerHTML =
+      '<button class="btn btn-file" onclick="fileIt()">File</button>' +
+      '<button class="btn btn-delete" onclick="deleteIt()">Delete</button>' +
+      '<button class="btn btn-ignore" onclick="ignoreIt()">Ignore</button>';
   } else if (effectiveFolder) {
     matchValueEl.textContent = "→ " + effectiveFolder.displayName;
     matchValueEl.className = "match-value";
@@ -121,6 +163,15 @@ function renderUI({ subject, fromName, fromAddr }) {
     folderRow.style.display = "block";
     actionsEl.innerHTML =
       '<button class="btn btn-file" onclick="fileIt()">File</button>' +
+      '<button class="btn btn-delete" onclick="deleteIt()">Delete</button>' +
+      '<button class="btn btn-ignore" onclick="ignoreIt()">Ignore</button>';
+  } else if (_ambiguous) {
+    matchValueEl.textContent = "(pick folder)";
+    matchValueEl.className = "match-value match-ambiguous";
+    renderDisambigPicker();
+    folderRow.style.display = "block";
+    actionsEl.innerHTML =
+      '<button class="btn btn-file" id="fileBtn" onclick="fileIt()" disabled>File</button>' +
       '<button class="btn btn-delete" onclick="deleteIt()">Delete</button>' +
       '<button class="btn btn-ignore" onclick="ignoreIt()">Ignore</button>';
   } else {
@@ -161,6 +212,17 @@ function renderFolderPicker(selectedId) {
   }
 }
 
+function renderDisambigPicker() {
+  const picker = document.getElementById("folderPicker");
+  picker.innerHTML = '<option value="">' + _candidates.length + ' matches — choose one…</option>';
+  for (const c of _candidates) {
+    const opt = document.createElement("option");
+    opt.value = c.id;
+    opt.textContent = c.displayName;
+    picker.appendChild(opt);
+  }
+}
+
 function updateMatchDisplay() {
   const effectiveFolder = _manualMatch || _match;
   if (!effectiveFolder) return;
@@ -179,22 +241,43 @@ function updateMatchDisplay() {
 function onFolderChange() {
   const picker = document.getElementById("folderPicker");
   const folderId = picker.value;
-  const pinned = JSON.parse(Office.context.roamingSettings.get("pinned_folders") || "[]");
-  _manualMatch = folderId ? ([...pinned, ..._folders].find(f => f.id === folderId) || null) : null;
+  if (_ambiguous) {
+    _manualMatch = folderId ? (_candidates.find(f => f.id === folderId) || null) : null;
+  } else {
+    const pinned = JSON.parse(Office.context.roamingSettings.get("pinned_folders") || "[]");
+    _manualMatch = folderId ? ([...pinned, ..._folders].find(f => f.id === folderId) || null) : null;
+  }
   const fileBtn = document.getElementById("fileBtn");
   if (fileBtn) fileBtn.disabled = !folderId;
   if (_manualMatch) {
     document.getElementById("match-value").textContent = "→ " + _manualMatch.displayName;
     document.getElementById("match-value").className = "match-value";
+  } else if (_ambiguous) {
+    document.getElementById("match-value").textContent = "(pick folder)";
+    document.getElementById("match-value").className = "match-value match-ambiguous";
   } else {
     document.getElementById("match-value").textContent = "(no match)";
     document.getElementById("match-value").className = "match-value nomatch";
   }
 }
 
+function learnFromDisambiguation(folder) {
+  const learned = JSON.parse(Office.context.roamingSettings.get("learned_contacts") || "{}");
+  for (const addr of _externalAddresses) {
+    learned[addr] = { folderId: folder.id, folderName: folder.displayName };
+  }
+  Office.context.roamingSettings.set("learned_contacts", JSON.stringify(learned));
+  Office.context.roamingSettings.saveAsync(() => {});
+}
+
 async function fileIt() {
   const folder = _manualMatch || _match;
   if (!folder) return;
+  if (_ambiguous) {
+    learnFromDisambiguation(folder);
+    _ambiguous = false;
+    _learnedMatch = true;
+  }
   setWorking("Filing…");
   try {
     const token = await ensureFreshToken();
@@ -326,6 +409,38 @@ function matchFolder(email, folders) {
       for (let k = 0; k < kws.length; k++) {
         if (lower.indexOf(kws[k]) !== -1) return folders[f];
       }
+    }
+  }
+  return null;
+}
+
+function matchAllFolders(email, folders) {
+  const texts = [email.subject, email.participantText, email.bodyText || ""].filter(Boolean);
+  const seen = new Set();
+  const matches = [];
+  for (let t = 0; t < texts.length; t++) {
+    const lower = texts[t].toLowerCase();
+    for (let f = 0; f < folders.length; f++) {
+      if (seen.has(folders[f].id)) continue;
+      const kws = folders[f].keywords;
+      for (let k = 0; k < kws.length; k++) {
+        if (lower.indexOf(kws[k]) !== -1) {
+          seen.add(folders[f].id);
+          matches.push(folders[f]);
+          break;
+        }
+      }
+    }
+  }
+  return matches;
+}
+
+function resolveAmbiguity(externalAddresses, candidates, learnedContacts) {
+  for (const addr of externalAddresses) {
+    const entry = learnedContacts[addr.toLowerCase()];
+    if (entry) {
+      const found = candidates.find(c => c.id === entry.folderId);
+      if (found) return found;
     }
   }
   return null;
