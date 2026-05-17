@@ -532,10 +532,10 @@ function toggleThread(idx) {
   const group = _threadGroups[idx];
   if (!group || group.done) return;
   const willExpand = !group.expanded;
-  const needsLoad = willExpand && group.emails.some(e => e.body === null);
+  _threadGroups.forEach((g, i) => { if (i !== idx) g.expanded = false; });
   group.expanded = willExpand;
   renderThreadList();
-  if (needsLoad) loadThreadBodies(group);
+  if (willExpand && group.emails.some(e => e.body === null)) loadThreadBodies(group);
 }
 
 async function loadThreadBodies(group) {
