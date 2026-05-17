@@ -337,7 +337,7 @@ function renderThreadList() {
   let html = "";
 
   _threadGroups.forEach((group, idx) => {
-    const doneClass = group.done ? " tl-done" : "";
+    if (group.done) return;
     const subject = esc(group.subject || "(no subject)");
     const effectiveFolder = group.manualMatch || group.match;
     const matchHtml = group.isInternal
@@ -350,10 +350,9 @@ function renderThreadList() {
             ? '<span class="tl-match tl-ambiguous">(pick folder)</span>'
             : '<span class="tl-match tl-no-match">(no match)</span>';
     const chevron = group.expanded ? "▼" : "▶";
-    const headerAttrs = group.done ? "" : ' onclick="toggleThread(' + idx + ')" style="cursor:pointer"';
 
-    html += '<div class="tl-group' + doneClass + '" id="tg-' + idx + '">';
-    html += '<div class="tl-header"' + headerAttrs + '>';
+    html += '<div class="tl-group" id="tg-' + idx + '">';
+    html += '<div class="tl-header" onclick="toggleThread(' + idx + ')" style="cursor:pointer">';
     html += '<span class="tl-chevron">' + chevron + '</span>';
     html += '<span class="tl-pill">' + group.emails.length + '</span>';
     html += '<span class="tl-subject">' + subject + '</span>';
