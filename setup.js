@@ -362,7 +362,7 @@ function openDialog(mode) {
   const sentLastRun = Office.context.roamingSettings.get("sent_last_run");
   if (sentLastRun) localStorage.setItem("hmf_sent_last_run", sentLastRun);
 
-  const dialogUrl = "https://ColinZeal42.github.io/outlook-filer/dialog.html";
+  const dialogUrl = "https://ColinZeal42.github.io/outlook-filer/dialog.html?t=" + Date.now();
   Office.context.ui.displayDialogAsync(dialogUrl, { width: 70, height: 80, displayInIframe: false },
     result => {
       if (result.status !== Office.AsyncResultStatus.Succeeded) return;
