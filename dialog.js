@@ -11,6 +11,8 @@ let _mode = "inbox";
 let _sortOrder = "date-desc";
 
 Office.onReady(() => {
+  const verEl = document.getElementById("dialog-ver");
+  if (verEl) verEl.textContent = typeof DIALOG_VERSION !== "undefined" ? DIALOG_VERSION : "?";
   _pinnedFolders = JSON.parse(localStorage.getItem("hmf_pinned_folders") || "[]");
   _learnedContacts = JSON.parse(localStorage.getItem("hmf_learned_contacts") || "{}");
   _mode = localStorage.getItem("hmf_mode") || "inbox";

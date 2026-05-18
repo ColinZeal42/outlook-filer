@@ -5,6 +5,7 @@
   <title>HMF Email Filer</title>
   <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
   <script>
+    var DIALOG_VERSION = "v8";
     var s = document.createElement("script");
     s.src = "dialog.js?t=" + Date.now();
     document.head.appendChild(s);
@@ -67,6 +68,7 @@
 <body>
   <div id="status">Loading…</div>
   <div id="queue-status"></div>
+  <div id="dialog-ver" style="position:fixed;bottom:6px;right:10px;font-size:11px;color:#bbb"></div>
   <div id="thread-list"></div>
 </body>
 </html>
