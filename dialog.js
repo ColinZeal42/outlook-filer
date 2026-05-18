@@ -603,6 +603,10 @@ function markThreadDone(idx) {
 
   renderThreadList();
 
+  // Force-remove the done element in case a cached renderThreadList re-added it
+  const doneEl = document.getElementById("tg-" + idx);
+  if (doneEl) doneEl.remove();
+
   if (nextIdx !== -1) {
     const nextEl = document.getElementById("tg-" + nextIdx);
     if (nextEl) nextEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
