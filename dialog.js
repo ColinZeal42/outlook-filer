@@ -278,18 +278,7 @@ function groupByThread(messages, folders) {
       if (candidates.length === 1) {
         match = candidates[0];
       } else if (candidates.length > 1) {
-        const externalAddrs = [];
-        const seen = new Set();
-        for (const e of group.emails) {
-          const fromAddr = (e.msg.from && e.msg.from.emailAddress && e.msg.from.emailAddress.address) || "";
-          const recips = recipientAddresses(e.msg);
-          for (const a of [fromAddr, ...recips]) {
-            if (!a) continue;
-            const lower = a.toLowerCase();
-            if (!seen.has(lower) && !lower.endsWith("@" + USER_DOMAIN)) { seen.add(lower); externalAddrs.push(lower); }
-          }
-        }
-        const resolved = resolveAmbiguity(externalAddrs, candidates, _learnedContacts);
+        const resolved = resolveAmbiguity(getGroupExternalAddresses(group), candidates, _learnedContacts);
         if (resolved) {
           match = resolved;
           learnedMatch = true;
@@ -502,7 +491,6 @@ function buildActionButtons(idx) {
   const folder = group.manualMatch || group.match;
   const fileOff = (!folder || checkedCount === 0) ? " disabled" : "";
   const delOff  = checkedCount === 0 ? " disabled" : "";
-  const flagOff = checkedCount === 0 ? " disabled" : "";
   const n = checkedCount > 0 ? " (" + checkedCount + ")" : "";
   const allReplied = checkedCount > 0 && checked.every(e => e.isReplied);
   const replyOff = (checkedCount === 0 || allReplied) ? " disabled" : "";
@@ -525,7 +513,7 @@ function buildActionButtons(idx) {
   const deleteBtn = _mode === "sent" ? "" :
     '<button class="tl-btn tl-delete"' + delOff + ' onclick="deleteThread(' + idx + ')">Delete' + n + '</button>';
   const flagBtn = _mode === "sent" ? "" :
-    '<button class="tl-btn tl-flag"' + flagOff + ' onclick="flagThread(' + idx + ')">Flag' + n + '</button>';
+    '<button class="tl-btn tl-flag"' + delOff + ' onclick="flagThread(' + idx + ')">Flag' + n + '</button>';
 
   return fileSection + deleteBtn + flagBtn +
     '<button class="tl-btn tl-skip" onclick="skipThread(' + idx + ')">Skip</button>';
