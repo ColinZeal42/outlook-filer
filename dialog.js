@@ -1,5 +1,7 @@
 "use strict";
 
+window.addEventListener('unhandledrejection', e => { e.preventDefault(); });
+
 const GRAPH_BASE = "https://graph.microsoft.com/v1.0";
 const USER_DOMAIN = "hmflaw.com";
 
@@ -536,7 +538,7 @@ function toggleThread(idx) {
   _threadGroups.forEach((g, i) => { if (i !== idx) g.expanded = false; });
   group.expanded = willExpand;
   renderThreadList();
-  if (willExpand && group.emails.some(e => e.body === null)) loadThreadBodies(group);
+  if (willExpand && group.emails.some(e => e.body === null)) loadThreadBodies(group).catch(() => {});
 }
 
 async function loadThreadBodies(group) {
@@ -613,7 +615,7 @@ function markThreadDone(idx) {
     const nextEl = document.getElementById("tg-" + nextIdx);
     if (nextEl) nextEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
     if (_threadGroups[nextIdx].emails.some(e => e.body === null)) {
-      loadThreadBodies(_threadGroups[nextIdx]);
+      loadThreadBodies(_threadGroups[nextIdx]).catch(() => {});
     }
   } else if (_threadGroups.every(g => g.done)) {
     document.getElementById("queue-status").textContent = "All done ✓";
