@@ -336,28 +336,30 @@ async function preloadLatestBodies(groups) {
   const token = await ensureFreshToken().catch(() => null);
   if (!token) return;
   await Promise.all(groups.map(async (group, idx) => {
-    const e = group.latestEmail;
-    if (!e || e.body !== null) return;
-    const details = await fetchEmailDetails(token, e.msg.id)
-      .catch(() => ({ body: null, isReplied: false, isForwarded: false }));
-    e.body = extractPreviewLines(details.body, 2) || "";
-    e.isReplied = details.isReplied;
-    e.isForwarded = details.isForwarded;
-    const stripEl = document.getElementById("tl-strip-" + idx);
-    if (stripEl) stripEl.outerHTML = buildStripHTML(idx, group);
-    const hdrEl = document.querySelector("#tg-" + idx + " .tl-header");
-    if (hdrEl) {
-      hdrEl.className = "tl-header" +
-        (e.isReplied ? " tl-replied" : e.isForwarded ? " tl-forwarded" : "");
-      const existing = hdrEl.querySelector(".tl-reply-icon");
-      if (existing) existing.remove();
-      if (e.isReplied || e.isForwarded) {
-        const span = document.createElement("span");
-        span.className = "tl-reply-icon";
-        span.textContent = e.isReplied ? "↩" : "↪";
-        hdrEl.appendChild(span);
+    try {
+      const e = group.latestEmail;
+      if (!e || e.body !== null) return;
+      const details = await fetchEmailDetails(token, e.msg.id)
+        .catch(() => ({ body: null, isReplied: false, isForwarded: false }));
+      e.body = extractPreviewLines(details.body, 2) || "";
+      e.isReplied = details.isReplied;
+      e.isForwarded = details.isForwarded;
+      const stripEl = document.getElementById("tl-strip-" + idx);
+      if (stripEl) stripEl.outerHTML = buildStripHTML(idx, group);
+      const hdrEl = document.querySelector("#tg-" + idx + " .tl-header");
+      if (hdrEl) {
+        hdrEl.className = "tl-header" +
+          (e.isReplied ? " tl-replied" : e.isForwarded ? " tl-forwarded" : "");
+        const existing = hdrEl.querySelector(".tl-reply-icon");
+        if (existing) existing.remove();
+        if (e.isReplied || e.isForwarded) {
+          const span = document.createElement("span");
+          span.className = "tl-reply-icon";
+          span.textContent = e.isReplied ? "↩" : "↪";
+          hdrEl.appendChild(span);
+        }
       }
-    }
+    } catch(_) {}
   }));
 }
 
@@ -687,15 +689,14 @@ async function fileThread(idx) {
   try {
     const token = await ensureFreshToken();
     const cid = group.conversationId;
-    const [, sentIds] = await Promise.all([
-      Promise.all(checked.map(e => moveMessage(token, e.msg.id, folder.id))),
-      _mode !== "sent"
-        ? fetchSentConversationIds(token, cid).catch(() => [])
-        : Promise.resolve([])
-    ]);
+    // Start sent fetch concurrently while inbox moves run sequentially
+    const sentIdsPromise = _mode !== "sent"
+      ? fetchSentConversationIds(token, cid).catch(() => [])
+      : Promise.resolve([]);
+    for (const e of checked) await moveMessage(token, e.msg.id, folder.id);
+    const sentIds = await sentIdsPromise;
     if (sentIds.length) {
-      await Promise.all(sentIds.map(id => moveMessage(token, id, folder.id)))
-        .catch(() => {});
+      await Promise.all(sentIds.map(id => moveMessage(token, id, folder.id).catch(() => {})));
     }
     markThreadDone(idx);
   } catch(err) {
