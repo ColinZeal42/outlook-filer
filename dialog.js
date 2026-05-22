@@ -676,6 +676,7 @@ function learnFromDisambiguation(group, folder) {
 async function fileThread(idx) {
   const group = _threadGroups[idx];
   if (!group) return;
+  if (group.isInternal) { deleteThread(idx); return; }
   const folder = group.manualMatch || group.match;
   if (!folder) return;
   const checked = group.emails.filter(e => e.checked);
