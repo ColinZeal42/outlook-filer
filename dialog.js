@@ -425,12 +425,17 @@ function renderThreadList() {
       ? '<span class="tl-reply-icon">↪</span>'
       : "";
 
+    const dateStr = group.latestDate
+      ? new Date(group.latestDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+      : "";
+
     html += '<div class="tl-group" id="tg-' + idx + '">';
     html += '<div class="tl-header' + hdrClass + '" onclick="toggleThread(' + idx + ')" style="cursor:pointer">';
     html += '<span class="tl-chevron">' + chevron + '</span>';
     html += '<span class="tl-pill">' + group.emails.length + '</span>';
     html += '<span class="tl-subject">' + subject + '</span>';
     html += matchHtml;
+    if (dateStr) html += '<span class="tl-date">' + dateStr + '</span>';
     html += replyIcon;
     html += '</div>';
 
