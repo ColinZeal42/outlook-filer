@@ -288,6 +288,12 @@ function groupByThread(messages, folders) {
       }
     }
 
+    const latestEmail = group.emails.reduce((best, e) => {
+      const d = new Date(e.msg.sentDateTime || e.msg.receivedDateTime || 0).getTime();
+      const bd = best ? new Date(best.msg.sentDateTime || best.msg.receivedDateTime || 0).getTime() : 0;
+      return d > bd ? e : best;
+    }, null);
+
     return {
       conversationId: cid,
       subject: group.subject,
@@ -301,6 +307,7 @@ function groupByThread(messages, folders) {
       expanded: false,
       done: false,
       latestDate: group.latestDate,
+      latestEmail,
       isInternal
     };
   }).sort((a, b) => {
@@ -322,6 +329,36 @@ function initThreadList(groups, folders, mode) {
   _mode = mode || "inbox";
   document.getElementById("thread-list").style.display = "block";
   renderThreadList();
+  preloadLatestBodies(groups).catch(() => {});
+}
+
+async function preloadLatestBodies(groups) {
+  const token = await ensureFreshToken().catch(() => null);
+  if (!token) return;
+  await Promise.all(groups.map(async (group, idx) => {
+    const e = group.latestEmail;
+    if (!e || e.body !== null) return;
+    const details = await fetchEmailDetails(token, e.msg.id)
+      .catch(() => ({ body: null, isReplied: false, isForwarded: false }));
+    e.body = extractPreviewLines(details.body, 2) || "";
+    e.isReplied = details.isReplied;
+    e.isForwarded = details.isForwarded;
+    const stripEl = document.getElementById("tl-strip-" + idx);
+    if (stripEl) stripEl.outerHTML = buildStripHTML(idx, group);
+    const hdrEl = document.querySelector("#tg-" + idx + " .tl-header");
+    if (hdrEl) {
+      hdrEl.className = "tl-header" +
+        (e.isReplied ? " tl-replied" : e.isForwarded ? " tl-forwarded" : "");
+      const existing = hdrEl.querySelector(".tl-reply-icon");
+      if (existing) existing.remove();
+      if (e.isReplied || e.isForwarded) {
+        const span = document.createElement("span");
+        span.className = "tl-reply-icon";
+        span.textContent = e.isReplied ? "↩" : "↪";
+        hdrEl.appendChild(span);
+      }
+    }
+  }));
 }
 
 function renderThreadList() {
@@ -343,13 +380,21 @@ function renderThreadList() {
             ? '<span class="tl-match tl-ambiguous">(pick folder)</span>'
             : '<span class="tl-match tl-no-match">(no match)</span>';
     const chevron = group.expanded ? "▼" : "▶";
+    const le = group.latestEmail;
+    const hdrClass = le?.isReplied ? " tl-replied" : le?.isForwarded ? " tl-forwarded" : "";
+    const replyIcon = le?.isReplied
+      ? '<span class="tl-reply-icon">↩</span>'
+      : le?.isForwarded
+      ? '<span class="tl-reply-icon">↪</span>'
+      : "";
 
     html += '<div class="tl-group" id="tg-' + idx + '">';
-    html += '<div class="tl-header" onclick="toggleThread(' + idx + ')" style="cursor:pointer">';
+    html += '<div class="tl-header' + hdrClass + '" onclick="toggleThread(' + idx + ')" style="cursor:pointer">';
     html += '<span class="tl-chevron">' + chevron + '</span>';
     html += '<span class="tl-pill">' + group.emails.length + '</span>';
     html += '<span class="tl-subject">' + subject + '</span>';
     html += matchHtml;
+    html += replyIcon;
     html += '</div>';
 
     if (!group.expanded) {
@@ -432,6 +477,15 @@ function buildStripHTML(idx, group) {
     html += '<button class="s-btn s-del" onclick="deleteThread(' + idx + ')">Delete</button>';
     html += '<button class="s-btn s-skip" onclick="skipThread(' + idx + ')">Ignore</button>';
   } else {
+    const le = group.latestEmail;
+    if (le && typeof le.body === "string" && le.body !== "") {
+      const badge = le.isReplied
+        ? ' <span class="strip-replied">↩ Replied</span>'
+        : le.isForwarded
+        ? ' <span class="strip-forwarded">↪ Forwarded</span>'
+        : "";
+      html += '<div class="strip-snippet">' + esc(le.body) + badge + '</div>';
+    }
     const selectedId = (group.manualMatch || group.match || {}).id || "";
     if (group.ambiguous && !group.manualMatch) {
       html += '<select class="strip-select strip-disambig" onchange="onStripFolderPick(' + idx + ', this)">';
@@ -632,11 +686,32 @@ async function fileThread(idx) {
   setThreadWorking(idx, "Filing…");
   try {
     const token = await ensureFreshToken();
-    for (const e of checked) await moveMessage(token, e.msg.id, folder.id);
+    const cid = group.conversationId;
+    const [, sentIds] = await Promise.all([
+      Promise.all(checked.map(e => moveMessage(token, e.msg.id, folder.id))),
+      _mode !== "sent"
+        ? fetchSentConversationIds(token, cid).catch(() => [])
+        : Promise.resolve([])
+    ]);
+    if (sentIds.length) {
+      await Promise.all(sentIds.map(id => moveMessage(token, id, folder.id)))
+        .catch(() => {});
+    }
     markThreadDone(idx);
   } catch(err) {
     setThreadWorking(idx, "Error — try again");
   }
+}
+
+async function fetchSentConversationIds(token, conversationId) {
+  const res = await fetch(
+    `${GRAPH_BASE}/me/mailFolders/SentItems/messages` +
+    `?$filter=conversationId eq '${conversationId}'&$select=id&$top=50`,
+    { headers: { Authorization: "Bearer " + token } }
+  );
+  if (!res.ok) return [];
+  const data = await res.json();
+  return (data.value || []).map(m => m.id);
 }
 
 async function deleteThread(idx) {
