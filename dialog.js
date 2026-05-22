@@ -117,28 +117,48 @@ async function moveMessage(token, msgId, destinationId) {
 }
 
 async function fetchEmailDetails(token, msgId) {
+  const headers = { Authorization: "Bearer " + token, "Prefer": 'outlook.body-content-type="text"' };
   try {
     const res = await fetch(
       `${GRAPH_BASE}/me/messages/${msgId}?$select=body` +
       `&$expand=singleValueExtendedProperties($filter=id eq 'Integer 0x1081')`,
-      {
-        headers: {
-          Authorization: "Bearer " + token,
-          "Prefer": 'outlook.body-content-type="text"'
-        }
-      }
+      { headers }
     );
-    if (!res.ok) return { body: null, isReplied: false, isForwarded: false };
-    const data = await res.json();
-    const verb = parseInt(((data.singleValueExtendedProperties || [])[0] || {}).value || "0");
-    return {
-      body: data.body && data.body.content ? data.body.content : null,
-      isReplied: verb === 102 || verb === 103,
-      isForwarded: verb === 104
-    };
+    if (res.ok) {
+      const data = await res.json();
+      const verb = parseInt(((data.singleValueExtendedProperties || [])[0] || {}).value || "0");
+      return {
+        body: extractBodyText(data.body),
+        isReplied: verb === 102 || verb === 103,
+        isForwarded: verb === 104
+      };
+    }
+    // $expand failed (e.g. calendar item, NDR) — retry body-only
+    const res2 = await fetch(
+      `${GRAPH_BASE}/me/messages/${msgId}?$select=body`,
+      { headers }
+    );
+    if (!res2.ok) return { body: null, isReplied: false, isForwarded: false };
+    const data2 = await res2.json();
+    return { body: extractBodyText(data2.body), isReplied: false, isForwarded: false };
   } catch(e) {
     return { body: null, isReplied: false, isForwarded: false };
   }
+}
+
+function extractBodyText(bodyObj) {
+  if (!bodyObj || !bodyObj.content) return null;
+  if (bodyObj.contentType === "html") {
+    return bodyObj.content
+      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
+      .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<\/?(p|div|tr|li|h[1-6]|blockquote)[^>]*>/gi, "\n")
+      .replace(/<[^>]+>/g, "")
+      .replace(/&nbsp;/g, " ").replace(/&amp;/g, "&")
+      .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"');
+  }
+  return bodyObj.content;
 }
 
 // --- Helpers ---
@@ -376,7 +396,8 @@ async function preloadLatestBodies(groups) {
       if (!e || e.body !== null) return;
       const details = await fetchEmailDetails(token, e.msg.id)
         .catch(() => ({ body: null, isReplied: false, isForwarded: false }));
-      e.body = extractPreviewLines(details.body, 4) || "";
+      const snippet = extractPreviewLines(details.body, 4);
+      if (snippet) e.body = snippet;  // leave null if empty so loadThreadBodies retries on expand
       e.isReplied = details.isReplied;
       e.isForwarded = details.isForwarded;
       const stripEl = document.getElementById("tl-strip-" + idx);
