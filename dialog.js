@@ -1,6 +1,31 @@
 "use strict";
 
-window.addEventListener('unhandledrejection', e => { e.preventDefault(); });
+window.addEventListener('unhandledrejection', e => {
+  e.preventDefault();
+  try {
+    const reason = e.reason;
+    const entry = {
+      ts: new Date().toISOString(),
+      type: "unhandledrejection",
+      msg: reason instanceof Error ? reason.message : String(reason),
+      stack: reason instanceof Error ? (reason.stack || "") : ""
+    };
+    localStorage.setItem("hmf_last_crash", JSON.stringify(entry));
+  } catch(_) {}
+});
+
+window.onerror = function(msg, src, line, col, err) {
+  try {
+    const entry = {
+      ts: new Date().toISOString(),
+      type: "onerror",
+      msg: msg,
+      location: (src || "") + ":" + line + ":" + col,
+      stack: err instanceof Error ? (err.stack || "") : ""
+    };
+    localStorage.setItem("hmf_last_crash", JSON.stringify(entry));
+  } catch(_) {}
+};
 
 const GRAPH_BASE = "https://graph.microsoft.com/v1.0";
 const USER_DOMAIN = "hmflaw.com";
@@ -15,6 +40,24 @@ let _sortOrder = "date-desc";
 Office.onReady(() => {
   const verEl = document.getElementById("dialog-ver");
   if (verEl) verEl.textContent = typeof DIALOG_VERSION !== "undefined" ? DIALOG_VERSION : "?";
+
+  const crashRaw = localStorage.getItem("hmf_last_crash");
+  if (crashRaw) {
+    try {
+      const c = JSON.parse(crashRaw);
+      const statusEl = document.getElementById("status");
+      if (statusEl) {
+        statusEl.innerHTML =
+          '<div style="background:#ffd7d7;border:1px solid #c00;border-radius:3px;padding:6px 10px;font-size:12px;margin-bottom:8px">' +
+          '<strong>Previous crash (' + c.ts + ')</strong><br>' +
+          esc(c.msg) + (c.location ? ' @ ' + esc(c.location) : '') +
+          (c.stack ? '<br><pre style="font-size:11px;margin:4px 0 0;white-space:pre-wrap">' + esc(c.stack) + '</pre>' : '') +
+          '</div>';
+      }
+    } catch(_) {}
+    localStorage.removeItem("hmf_last_crash");
+  }
+
   _pinnedFolders = JSON.parse(localStorage.getItem("hmf_pinned_folders") || "[]");
   _learnedContacts = JSON.parse(localStorage.getItem("hmf_learned_contacts") || "{}");
   _mode = localStorage.getItem("hmf_mode") || "inbox";
