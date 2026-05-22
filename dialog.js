@@ -153,21 +153,13 @@ function stripClutter(text) {
 
 function extractPreviewLines(text, maxLines) {
   if (!text) return "";
-  const lines = text.split(/\r?\n/);
   const result = [];
-  let blankRun = 0;
-  for (const line of lines) {
+  for (const line of text.split(/\r?\n/)) {
     const t = stripClutter(line).trim();
-    if (!t) {
-      if (blankRun === 0 && result.length > 0) result.push("");
-      blankRun++;
-    } else {
-      blankRun = 0;
-      result.push(t);
-    }
+    if (t) result.push(t);
     if (result.length >= maxLines) break;
   }
-  return result.join("\n").trim();
+  return result.join("\n");
 }
 
 function esc(s) {
@@ -384,7 +376,7 @@ async function preloadLatestBodies(groups) {
       if (!e || e.body !== null) return;
       const details = await fetchEmailDetails(token, e.msg.id)
         .catch(() => ({ body: null, isReplied: false, isForwarded: false }));
-      e.body = extractPreviewLines(details.body, 2) || "";
+      e.body = extractPreviewLines(details.body, 4) || "";
       e.isReplied = details.isReplied;
       e.isForwarded = details.isForwarded;
       const stripEl = document.getElementById("tl-strip-" + idx);
