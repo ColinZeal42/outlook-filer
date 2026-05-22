@@ -455,8 +455,8 @@ function renderThreadList() {
     html += '<span class="tl-chevron">' + chevron + '</span>';
     html += '<span class="tl-pill">' + group.emails.length + '</span>';
     html += '<span class="tl-subject">' + subject + '</span>';
+    if (dateStr) html += '<span class="tl-date">(' + dateStr + ')</span>';
     html += matchHtml;
-    if (dateStr) html += '<span class="tl-date">' + dateStr + '</span>';
     html += replyIcon;
     html += '</div>';
 
