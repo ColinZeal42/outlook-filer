@@ -8,6 +8,27 @@
   <title>HMF Email Filer</title>
   <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
   <script>
+    // Register crash handlers immediately — before dialog.js loads
+    window.addEventListener('unhandledrejection', function(e) {
+      e.preventDefault();
+      try {
+        var r = e.reason;
+        localStorage.setItem('hmf_last_crash', JSON.stringify({
+          ts: new Date().toISOString(), type: 'unhandledrejection',
+          msg: r instanceof Error ? r.message : String(r),
+          stack: r instanceof Error ? (r.stack || '') : ''
+        }));
+      } catch(_) {}
+    });
+    window.onerror = function(msg, src, line, col, err) {
+      try {
+        localStorage.setItem('hmf_last_crash', JSON.stringify({
+          ts: new Date().toISOString(), type: 'onerror',
+          msg: msg, location: (src||'') + ':' + line + ':' + col,
+          stack: err instanceof Error ? (err.stack || '') : ''
+        }));
+      } catch(_) {}
+    };
     var DIALOG_VERSION = "v10";
     var s = document.createElement("script");
     s.src = "dialog.js?t=" + Date.now();
@@ -84,6 +105,7 @@
 </head>
 <body>
   <div style="background:#0078d4;color:#fff;font-size:13px;font-weight:700;padding:3px 10px;margin:-20px -20px 12px -20px;letter-spacing:1px;">HMF FILER v10</div>
+  <div id="crash-banner" style="display:none;background:#ffd7d7;border:1px solid #c00;border-radius:3px;padding:6px 10px;font-size:12px;margin-bottom:8px"></div>
   <div id="status">Loading…</div>
   <div id="queue-status"></div>
   <div id="dialog-ver"></div>

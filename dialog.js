@@ -1,32 +1,5 @@
 "use strict";
 
-window.addEventListener('unhandledrejection', e => {
-  e.preventDefault();
-  try {
-    const reason = e.reason;
-    const entry = {
-      ts: new Date().toISOString(),
-      type: "unhandledrejection",
-      msg: reason instanceof Error ? reason.message : String(reason),
-      stack: reason instanceof Error ? (reason.stack || "") : ""
-    };
-    localStorage.setItem("hmf_last_crash", JSON.stringify(entry));
-  } catch(_) {}
-});
-
-window.onerror = function(msg, src, line, col, err) {
-  try {
-    const entry = {
-      ts: new Date().toISOString(),
-      type: "onerror",
-      msg: msg,
-      location: (src || "") + ":" + line + ":" + col,
-      stack: err instanceof Error ? (err.stack || "") : ""
-    };
-    localStorage.setItem("hmf_last_crash", JSON.stringify(entry));
-  } catch(_) {}
-};
-
 const GRAPH_BASE = "https://graph.microsoft.com/v1.0";
 const USER_DOMAIN = "hmflaw.com";
 
@@ -42,20 +15,19 @@ Office.onReady(() => {
   if (verEl) verEl.textContent = typeof DIALOG_VERSION !== "undefined" ? DIALOG_VERSION : "?";
 
   const crashRaw = localStorage.getItem("hmf_last_crash");
+  localStorage.removeItem("hmf_last_crash");
   if (crashRaw) {
     try {
       const c = JSON.parse(crashRaw);
-      const statusEl = document.getElementById("status");
-      if (statusEl) {
-        statusEl.innerHTML =
-          '<div style="background:#ffd7d7;border:1px solid #c00;border-radius:3px;padding:6px 10px;font-size:12px;margin-bottom:8px">' +
+      const banner = document.getElementById("crash-banner");
+      if (banner) {
+        banner.innerHTML =
           '<strong>Previous crash (' + c.ts + ')</strong><br>' +
           esc(c.msg) + (c.location ? ' @ ' + esc(c.location) : '') +
-          (c.stack ? '<br><pre style="font-size:11px;margin:4px 0 0;white-space:pre-wrap">' + esc(c.stack) + '</pre>' : '') +
-          '</div>';
+          (c.stack ? '<br><pre style="font-size:11px;margin:4px 0 0;white-space:pre-wrap">' + esc(c.stack) + '</pre>' : '');
+        banner.style.display = "block";
       }
     } catch(_) {}
-    localStorage.removeItem("hmf_last_crash");
   }
 
   _pinnedFolders = JSON.parse(localStorage.getItem("hmf_pinned_folders") || "[]");
@@ -390,33 +362,37 @@ function initThreadList(groups, folders, mode) {
 async function preloadLatestBodies(groups) {
   const token = await ensureFreshToken().catch(() => null);
   if (!token) return;
-  await Promise.all(groups.map(async (group, idx) => {
-    try {
-      const e = group.latestEmail;
-      if (!e || e.body !== null) return;
-      const details = await fetchEmailDetails(token, e.msg.id)
-        .catch(() => ({ body: null, isReplied: false, isForwarded: false }));
-      const snippet = extractPreviewLines(details.body, 4);
-      if (snippet) e.body = snippet;  // leave null if empty so loadThreadBodies retries on expand
-      e.isReplied = details.isReplied;
-      e.isForwarded = details.isForwarded;
-      const stripEl = document.getElementById("tl-strip-" + idx);
-      if (stripEl) stripEl.outerHTML = buildStripHTML(idx, group);
-      const hdrEl = document.querySelector("#tg-" + idx + " .tl-header");
-      if (hdrEl) {
-        hdrEl.className = "tl-header" +
-          (e.isReplied ? " tl-replied" : e.isForwarded ? " tl-forwarded" : "");
-        const existing = hdrEl.querySelector(".tl-reply-icon");
-        if (existing) existing.remove();
-        if (e.isReplied || e.isForwarded) {
-          const span = document.createElement("span");
-          span.className = "tl-reply-icon";
-          span.textContent = e.isReplied ? "↩" : "↪";
-          hdrEl.appendChild(span);
+  // Process 5 at a time to avoid overwhelming WebKit with concurrent requests
+  for (let i = 0; i < groups.length; i += 5) {
+    await Promise.all(groups.slice(i, i + 5).map(async (group) => {
+      const idx = groups.indexOf(group);
+      try {
+        const e = group.latestEmail;
+        if (!e || e.body !== null) return;
+        const details = await fetchEmailDetails(token, e.msg.id)
+          .catch(() => ({ body: null, isReplied: false, isForwarded: false }));
+        const snippet = extractPreviewLines(details.body, 4);
+        if (snippet) e.body = snippet;
+        e.isReplied = details.isReplied;
+        e.isForwarded = details.isForwarded;
+        const stripEl = document.getElementById("tl-strip-" + idx);
+        if (stripEl) stripEl.outerHTML = buildStripHTML(idx, group);
+        const hdrEl = document.querySelector("#tg-" + idx + " .tl-header");
+        if (hdrEl) {
+          hdrEl.className = "tl-header" +
+            (e.isReplied ? " tl-replied" : e.isForwarded ? " tl-forwarded" : "");
+          const existing = hdrEl.querySelector(".tl-reply-icon");
+          if (existing) existing.remove();
+          if (e.isReplied || e.isForwarded) {
+            const span = document.createElement("span");
+            span.className = "tl-reply-icon";
+            span.textContent = e.isReplied ? "↩" : "↪";
+            hdrEl.appendChild(span);
+          }
         }
-      }
-    } catch(_) {}
-  }));
+      } catch(_) {}
+    }));
+  }
 }
 
 function renderThreadList() {
