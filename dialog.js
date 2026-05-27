@@ -105,7 +105,9 @@ async function fetchEmailDetails(token, msgId) {
         isForwarded: verb === 104
       };
     }
-    // $expand failed (e.g. calendar item, NDR) — retry body-only
+    // Only retry on 400 — message type doesn't support extended properties.
+    // Don't retry on 429/5xx to avoid compounding rate-limit pressure.
+    if (res.status !== 400) return { body: null, isReplied: false, isForwarded: false };
     const res2 = await fetch(
       `${GRAPH_BASE}/me/messages/${msgId}?$select=body`,
       { headers }
@@ -367,6 +369,7 @@ async function preloadLatestBodies(groups) {
     await Promise.all(groups.slice(i, i + 5).map(async (group) => {
       const idx = groups.indexOf(group);
       try {
+        if (group.isInternal) return;
         const e = group.latestEmail;
         if (!e || e.body !== null) return;
         const details = await fetchEmailDetails(token, e.msg.id)

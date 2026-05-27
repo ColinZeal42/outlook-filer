@@ -20,15 +20,15 @@
         }));
       } catch(_) {}
     });
-    window.onerror = function(msg, src, line, col, err) {
+    window.addEventListener('error', function(ev) {
       try {
         localStorage.setItem('hmf_last_crash', JSON.stringify({
-          ts: new Date().toISOString(), type: 'onerror',
-          msg: msg, location: (src||'') + ':' + line + ':' + col,
-          stack: err instanceof Error ? (err.stack || '') : ''
+          ts: new Date().toISOString(), type: 'error',
+          msg: ev.message, location: (ev.filename||'') + ':' + ev.lineno + ':' + ev.colno,
+          stack: ev.error instanceof Error ? (ev.error.stack || '') : ''
         }));
       } catch(_) {}
-    };
+    });
     var DIALOG_VERSION = "v10";
     var s = document.createElement("script");
     s.src = "dialog.js?t=" + Date.now();
