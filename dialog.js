@@ -561,6 +561,7 @@ function buildStripHTML(idx, group) {
   } else if (group.isInternal) {
     html += '<button class="s-btn s-reply-del" onclick="replyAndFile(' + idx + ')">Reply &amp; Delete</button>';
     html += '<button class="s-btn s-del" onclick="deleteThread(' + idx + ')">Delete</button>';
+    html += '<button class="s-btn s-flag" onclick="flagThread(' + idx + ')">Flag</button>';
     html += '<button class="s-btn s-skip" onclick="skipThread(' + idx + ')">Ignore</button>';
   } else {
     const le = group.latestEmail;
@@ -591,6 +592,7 @@ function buildStripHTML(idx, group) {
       html += '<button class="s-btn s-reply-file"' + fileOff + ' onclick="replyAndFile(' + idx + ')">Reply &amp; File</button>';
     }
     html += '<button class="s-btn s-del" onclick="deleteThread(' + idx + ')">Delete</button>';
+    html += '<button class="s-btn s-flag" onclick="flagThread(' + idx + ')">Flag</button>';
     html += '<button class="s-btn s-skip" onclick="skipThread(' + idx + ')">Ignore</button>';
   }
 
