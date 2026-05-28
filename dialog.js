@@ -451,10 +451,19 @@ function buildCategoryList() {
 
 function buildLinearPanelHTML() {
   const cats = buildCategoryList();
+  // If filter is "no-match" but the current card has a body-matched folder,
+  // highlight that folder so the panel stays in sync with the card header.
+  let visualActiveKey = _linearFilter;
+  if (_linearFilter === "no-match" && _linearIdx >= 0) {
+    const cur = _threadGroups[_linearIdx];
+    if (cur && (cur.manualMatch || cur.match)) {
+      visualActiveKey = (cur.manualMatch || cur.match).id;
+    }
+  }
   let html = '<div class="lp-panel">';
   html += '<div class="lp-heading">By folder</div>';
   cats.forEach(cat => {
-    const isActive = cat.key === _linearFilter;
+    const isActive = cat.key === visualActiveKey;
     const isNoMatch = cat.key === "no-match";
     const isInternal = cat.key === "internal";
     let rowClass = "lp-row";
