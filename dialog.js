@@ -602,14 +602,15 @@ function renderLinearCard(idx) {
   });
   html += '</div>';
 
+  html += '<div class="lc-actions-area">';
   if (!group.isInternal) {
     const selectedId = (group.manualMatch || group.match || {}).id || "";
-    html += '<select class="tl-folder-select" onchange="onFolderPick(' + idx + ', this.value)">';
+    html += '<select class="strip-select lc-folder-sel" onchange="onFolderPick(' + idx + ', this.value)">';
     html += buildFolderOptions(selectedId);
     html += '</select>';
   }
-
   html += '<div class="tl-actions" id="tl-actions-' + idx + '">' + buildActionButtons(idx) + '</div>';
+  html += '</div>';
   html += '</div>'; // lc-card
   html += '</div>'; // lc-col
   html += '</div>'; // lc-columns
