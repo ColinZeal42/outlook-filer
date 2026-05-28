@@ -358,44 +358,40 @@ function initThreadList(groups, folders, mode) {
   _mode = mode || "inbox";
   document.getElementById("thread-list").style.display = "block";
   renderThreadList();
-  preloadLatestBodies(groups).catch(() => {});
 }
 
-async function preloadLatestBodies(groups) {
-  const token = await ensureFreshToken().catch(() => null);
-  if (!token) return;
-  // Process 5 at a time to avoid overwhelming WebKit with concurrent requests
-  for (let i = 0; i < groups.length; i += 5) {
-    await Promise.all(groups.slice(i, i + 5).map(async (group) => {
-      const idx = groups.indexOf(group);
-      try {
-        if (group.isInternal) return;
-        const e = group.latestEmail;
-        if (!e || e.body !== null) return;
-        const details = await fetchEmailDetails(token, e.msg.id)
-          .catch(() => ({ body: null, isReplied: false, isForwarded: false }));
-        const snippet = extractPreviewLines(details.body, 4);
-        if (snippet) e.body = snippet;
-        e.isReplied = details.isReplied;
-        e.isForwarded = details.isForwarded;
-        const stripEl = document.getElementById("tl-strip-" + idx);
-        if (stripEl) stripEl.outerHTML = buildStripHTML(idx, group);
-        const hdrEl = document.querySelector("#tg-" + idx + " .tl-header");
-        if (hdrEl) {
-          hdrEl.className = "tl-header" +
-            (e.isReplied ? " tl-replied" : e.isForwarded ? " tl-forwarded" : "");
-          const existing = hdrEl.querySelector(".tl-reply-icon");
-          if (existing) existing.remove();
-          if (e.isReplied || e.isForwarded) {
-            const span = document.createElement("span");
-            span.className = "tl-reply-icon";
-            span.textContent = e.isReplied ? "↩" : "↪";
-            hdrEl.appendChild(span);
-          }
-        }
-      } catch(_) {}
-    }));
-  }
+async function onGroupHover(idx) {
+  try {
+    const group = _threadGroups[idx];
+    if (!group || group.isInternal || group.done) return;
+    const e = group.latestEmail;
+    if (!e || e.body !== null || e._loading) return;
+    e._loading = true;
+    const token = await ensureFreshToken().catch(() => null);
+    if (!token) { e._loading = false; return; }
+    const details = await fetchEmailDetails(token, e.msg.id)
+      .catch(() => ({ body: null, isReplied: false, isForwarded: false }));
+    e._loading = false;
+    const snippet = extractPreviewLines(details.body, 4);
+    if (snippet) e.body = snippet;
+    e.isReplied = details.isReplied;
+    e.isForwarded = details.isForwarded;
+    const stripEl = document.getElementById("tl-strip-" + idx);
+    if (stripEl) stripEl.outerHTML = buildStripHTML(idx, group);
+    const hdrEl = document.querySelector("#tg-" + idx + " .tl-header");
+    if (hdrEl) {
+      hdrEl.className = "tl-header" +
+        (e.isReplied ? " tl-replied" : e.isForwarded ? " tl-forwarded" : "");
+      const existing = hdrEl.querySelector(".tl-reply-icon");
+      if (existing) existing.remove();
+      if (e.isReplied || e.isForwarded) {
+        const span = document.createElement("span");
+        span.className = "tl-reply-icon";
+        span.textContent = e.isReplied ? "↩" : "↪";
+        hdrEl.appendChild(span);
+      }
+    }
+  } catch(_) {}
 }
 
 function renderThreadList() {
@@ -429,7 +425,7 @@ function renderThreadList() {
       ? new Date(group.latestDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
       : "";
 
-    html += '<div class="tl-group" id="tg-' + idx + '">';
+    html += '<div class="tl-group" id="tg-' + idx + '" onmouseenter="onGroupHover(' + idx + ')">';
     html += '<div class="tl-header' + hdrClass + '" onclick="toggleThread(' + idx + ')" style="cursor:pointer">';
     html += '<span class="tl-chevron">' + chevron + '</span>';
     html += '<span class="tl-pill">' + group.emails.length + '</span>';
