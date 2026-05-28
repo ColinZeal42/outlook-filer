@@ -516,9 +516,12 @@ function advanceLinear() {
     renderLinearCard(_linearIdx);
     return;
   }
+  const allDoneHTML = () =>
+    '<div class="lc-columns">' + buildLinearPanelHTML() +
+    '<div class="lc-col"><div class="lc-done">All done ✓</div></div></div>';
   if (_linearFilter === null) {
     _linearIdx = -1;
-    document.getElementById("thread-list").innerHTML = '<div class="lc-done">All done ✓</div>';
+    document.getElementById("thread-list").innerHTML = allDoneHTML();
     document.getElementById("queue-status").textContent = "All done ✓";
     return;
   }
@@ -526,7 +529,7 @@ function advanceLinear() {
   const firstAny = _threadGroups.findIndex(g => !g.done);
   if (firstAny === -1) {
     _linearIdx = -1;
-    document.getElementById("thread-list").innerHTML = '<div class="lc-done">All done ✓</div>';
+    document.getElementById("thread-list").innerHTML = allDoneHTML();
     document.getElementById("queue-status").textContent = "All done ✓";
     return;
   }
@@ -1113,7 +1116,12 @@ async function lizItThread(idx) {
       method: "POST",
       headers: { Authorization: "Bearer " + token }
     });
-    if (!sendRes.ok) throw new Error("Send failed");
+    if (!sendRes.ok) {
+      await fetch(`${GRAPH_BASE}/me/messages/${draft.id}`, {
+        method: "DELETE", headers: { Authorization: "Bearer " + token }
+      }).catch(() => {});
+      throw new Error("Send failed");
+    }
     setThreadWorking(idx, "Filing…");
     const checked = group.emails.filter(e => e.checked);
     const cid = group.conversationId;
