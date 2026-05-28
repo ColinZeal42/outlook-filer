@@ -889,15 +889,15 @@ async function loadThreadBodies(group) {
   const token = await ensureFreshToken().catch(() => null);
   if (!token) return;
   const rawBodies = {};
-  await Promise.all(group.emails.map(async e => {
-    if (e.body !== null) return;
+  for (const e of group.emails) {
+    if (e.body !== null) continue;
     const details = await fetchEmailDetails(token, e.msg.id)
       .catch(() => ({ body: null, isReplied: false, isForwarded: false }));
     rawBodies[e.msg.id] = details.body || "";
     e.body = extractPreviewLines(details.body, 5) || "(no preview)";
     e.isReplied = details.isReplied;
     e.isForwarded = details.isForwarded;
-  }));
+  }
   if (!group.match) {
     const counts = {};
     for (const e of group.emails) {
