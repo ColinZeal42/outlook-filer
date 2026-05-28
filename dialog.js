@@ -358,6 +358,54 @@ function initThreadList(groups, folders, mode) {
   _mode = mode || "inbox";
   document.getElementById("thread-list").style.display = "block";
   renderThreadList();
+  preloadVerbs(groups).catch(() => {});
+}
+
+async function fetchEmailVerb(token, msgId) {
+  try {
+    const res = await fetch(
+      `${GRAPH_BASE}/me/messages/${msgId}?$select=id` +
+      `&$expand=singleValueExtendedProperties($filter=id eq 'Integer 0x1081')`,
+      { headers: { Authorization: "Bearer " + token } }
+    );
+    if (!res.ok) return { isReplied: false, isForwarded: false };
+    const data = await res.json();
+    const verb = parseInt(((data.singleValueExtendedProperties || [])[0] || {}).value || "0");
+    return { isReplied: verb === 102 || verb === 103, isForwarded: verb === 104 };
+  } catch(_) {
+    return { isReplied: false, isForwarded: false };
+  }
+}
+
+async function preloadVerbs(groups) {
+  const token = await ensureFreshToken().catch(() => null);
+  if (!token) return;
+  for (let i = 0; i < groups.length; i += 5) {
+    await Promise.all(groups.slice(i, i + 5).map(async (group, j) => {
+      const idx = i + j;
+      try {
+        if (group.isInternal) return;
+        const e = group.latestEmail;
+        if (!e) return;
+        const verb = await fetchEmailVerb(token, e.msg.id);
+        e.isReplied = verb.isReplied;
+        e.isForwarded = verb.isForwarded;
+        const hdrEl = document.querySelector("#tg-" + idx + " .tl-header");
+        if (hdrEl) {
+          hdrEl.className = "tl-header" +
+            (e.isReplied ? " tl-replied" : e.isForwarded ? " tl-forwarded" : "");
+          const existing = hdrEl.querySelector(".tl-reply-icon");
+          if (existing) existing.remove();
+          if (e.isReplied || e.isForwarded) {
+            const span = document.createElement("span");
+            span.className = "tl-reply-icon";
+            span.textContent = e.isReplied ? "↩" : "↪";
+            hdrEl.appendChild(span);
+          }
+        }
+      } catch(_) {}
+    }));
+  }
 }
 
 async function onGroupHover(idx) {
