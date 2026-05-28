@@ -11,6 +11,7 @@ let _mode = "inbox";
 let _sortOrder = "date-desc";
 let _linearMode = false;
 let _linearIdx = 0;
+let _linearFilter = null;
 
 Office.onReady(() => {
   const verEl = document.getElementById("dialog-ver");
@@ -412,11 +413,82 @@ async function preloadVerbs(groups) {
   }
 }
 
+function threadMatchesFilter(group, filterKey) {
+  if (filterKey === null) return true;
+  if (filterKey === "internal") return group.isInternal;
+  if (filterKey === "no-match") return !group.isInternal && !(group.match || group.manualMatch);
+  return !group.isInternal &&
+    ((group.match && group.match.id === filterKey) ||
+     (group.manualMatch && group.manualMatch.id === filterKey));
+}
+
+function buildCategoryList() {
+  const folderCounts = {};
+  let noMatchCount = 0;
+  let internalCount = 0;
+  let allCount = 0;
+  for (const g of _threadGroups) {
+    if (g.done) continue;
+    allCount++;
+    if (g.isInternal) {
+      internalCount++;
+    } else {
+      const f = g.manualMatch || g.match;
+      if (f) {
+        if (!folderCounts[f.id]) folderCounts[f.id] = { key: f.id, label: f.displayName, count: 0 };
+        folderCounts[f.id].count++;
+      } else {
+        noMatchCount++;
+      }
+    }
+  }
+  const cats = [{ key: null, label: "All threads", count: allCount }];
+  Object.values(folderCounts).sort((a, b) => b.count - a.count).forEach(c => cats.push(c));
+  if (noMatchCount > 0) cats.push({ key: "no-match", label: "(no match)", count: noMatchCount });
+  if (internalCount > 0) cats.push({ key: "internal", label: "(internal)", count: internalCount });
+  return cats;
+}
+
+function buildLinearPanelHTML() {
+  const cats = buildCategoryList();
+  let html = '<div class="lp-panel">';
+  html += '<div class="lp-heading">By folder</div>';
+  cats.forEach(cat => {
+    const isActive = cat.key === _linearFilter;
+    const isNoMatch = cat.key === "no-match";
+    const isInternal = cat.key === "internal";
+    let rowClass = "lp-row";
+    if (isActive) rowClass += " lp-row-active";
+    if (isNoMatch && !isActive) rowClass += " lp-no-match";
+    if (isInternal && !isActive) rowClass += " lp-internal";
+    const keyArg = cat.key === null ? "null" : "'" + esc(cat.key) + "'";
+    html += '<div class="' + rowClass + '" onclick="setLinearFilter(' + keyArg + ')">';
+    html += '<span>' + esc(cat.label) + '</span>';
+    html += '<span class="lp-badge">' + cat.count + '</span>';
+    html += '</div>';
+  });
+  html += '</div>';
+  return html;
+}
+
+function setLinearFilter(key) {
+  _linearFilter = key;
+  const idx = _threadGroups.findIndex(g => !g.done && threadMatchesFilter(g, key));
+  if (idx !== -1) {
+    renderLinearCard(idx);
+  } else {
+    const el = document.getElementById("thread-list");
+    if (el) el.innerHTML = '<div class="lc-columns">' + buildLinearPanelHTML() +
+      '<div class="lc-col"><div class="lc-done">All done ✓</div></div></div>';
+  }
+}
+
 function toggleLinearMode() {
   _linearMode = !_linearMode;
   const btn = document.getElementById("mode-toggle");
   if (btn) btn.textContent = _linearMode ? "Switch to List" : "Switch to Linear";
   if (_linearMode) {
+    _linearFilter = null;
     _linearIdx = _threadGroups.findIndex(g => !g.done);
     if (_linearIdx === -1) {
       document.getElementById("thread-list").innerHTML = '<div class="lc-done">All done ✓</div>';
@@ -429,15 +501,36 @@ function toggleLinearMode() {
 }
 
 function advanceLinear() {
-  const nextIdx = _threadGroups.findIndex((g, i) => i > _linearIdx && !g.done);
-  if (nextIdx !== -1) {
-    _linearIdx = nextIdx;
+  const nextInFilter = _threadGroups.findIndex((g, i) => i > _linearIdx && !g.done && threadMatchesFilter(g, _linearFilter));
+  if (nextInFilter !== -1) {
+    _linearIdx = nextInFilter;
     renderLinearCard(_linearIdx);
-  } else {
+    return;
+  }
+  if (_linearFilter === null) {
     _linearIdx = -1;
     document.getElementById("thread-list").innerHTML = '<div class="lc-done">All done ✓</div>';
     document.getElementById("queue-status").textContent = "All done ✓";
+    return;
   }
+  // Category exhausted — jump to first undone thread globally
+  const firstAny = _threadGroups.findIndex(g => !g.done);
+  if (firstAny === -1) {
+    _linearIdx = -1;
+    document.getElementById("thread-list").innerHTML = '<div class="lc-done">All done ✓</div>';
+    document.getElementById("queue-status").textContent = "All done ✓";
+    return;
+  }
+  const nextGroup = _threadGroups[firstAny];
+  if (nextGroup.isInternal) {
+    _linearFilter = "internal";
+  } else if (!(nextGroup.match || nextGroup.manualMatch)) {
+    _linearFilter = "no-match";
+  } else {
+    _linearFilter = (nextGroup.manualMatch || nextGroup.match).id;
+  }
+  _linearIdx = firstAny;
+  renderLinearCard(_linearIdx);
 }
 
 function renderLinearCard(idx) {
@@ -474,7 +567,9 @@ function renderLinearCard(idx) {
     ? new Date(group.latestDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
     : "";
 
-  let html = '';
+  let html = '<div class="lc-columns">';
+  html += buildLinearPanelHTML();
+  html += '<div class="lc-col">';
 
   html += '<div class="lc-progress-track"><div class="lc-progress-fill" style="width:' + progressPct + '%"></div></div>';
   html += '<div class="lc-card">';
@@ -515,7 +610,9 @@ function renderLinearCard(idx) {
   }
 
   html += '<div class="tl-actions" id="tl-actions-' + idx + '">' + buildActionButtons(idx) + '</div>';
-  html += '</div>';
+  html += '</div>'; // lc-card
+  html += '</div>'; // lc-col
+  html += '</div>'; // lc-columns
 
   el.innerHTML = html;
 

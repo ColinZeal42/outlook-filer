@@ -108,6 +108,17 @@
     .lc-header { display: flex; align-items: center; gap: 8px; padding: 9px 12px; background: #f9f9f9; font-size: 16px; }
     .lc-emails { padding: 10px 12px; border-top: 1px solid #e0e0e0; max-height: 55vh; overflow-y: auto; }
     .lc-done { font-size: 20px; color: #107c10; font-weight: 600; text-align: center; padding: 40px 0; }
+    .lc-columns { display: flex; align-items: stretch; }
+    .lc-col { flex: 1; min-width: 0; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+    .lp-panel { width: 190px; flex-shrink: 0; border-right: 1px solid #ddd; background: #f7f7f7; overflow-y: auto; }
+    .lp-heading { padding: 5px 10px; font-size: 11px; font-weight: 700; color: #888; letter-spacing: .5px; border-bottom: 1px solid #e0e0e0; text-transform: uppercase; }
+    .lp-row { padding: 7px 10px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #ececec; font-size: 13px; }
+    .lp-row:hover { background: #efefef; }
+    .lp-row-active { background: #0078d4 !important; color: #fff; }
+    .lp-badge { border-radius: 10px; padding: 1px 7px; font-size: 12px; background: #e0e0e0; color: #555; }
+    .lp-row-active .lp-badge { background: rgba(255,255,255,.25); color: #fff; }
+    .lp-no-match { color: #ca5010; font-style: italic; }
+    .lp-internal { color: #a4262c; font-style: italic; }
   </style>
 </head>
 <body>
