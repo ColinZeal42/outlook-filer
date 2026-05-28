@@ -813,6 +813,9 @@ function buildStripHTML(idx, group) {
     html += '<button class="s-btn s-file"' + fileOff + ' onclick="fileThread(' + idx + ')">File</button>';
     if (_mode !== "sent") {
       html += '<button class="s-btn s-reply-file"' + fileOff + ' onclick="replyAndFile(' + idx + ')">Reply &amp; File</button>';
+      if (localStorage.getItem("hmf_lizit_email")) {
+        html += '<button class="s-btn s-lizit"' + fileOff + ' onclick="lizItThread(' + idx + ')">Liz It</button>';
+      }
     }
     html += '<button class="s-btn s-del" onclick="deleteThread(' + idx + ')">Delete</button>';
     html += '<button class="s-btn s-flag" onclick="flagThread(' + idx + ')">Flag</button>';
@@ -865,10 +868,14 @@ function buildActionButtons(idx) {
   if (_mode === "sent") {
     fileSection = '<button class="tl-btn tl-file"' + fileOff + ' onclick="fileThread(' + idx + ')">File' + n + '</button>';
   } else if (!group.isInternal) {
+    const lizBtn = (_mode !== "sent" && localStorage.getItem("hmf_lizit_email"))
+      ? '<button class="tl-btn tl-lizit"' + fileOff + ' onclick="lizItThread(' + idx + ')">Liz It</button>'
+      : '';
     fileSection = group.armed
       ? armedLabel + '<button class="tl-btn tl-confirm-file"' + fileOff + ' onclick="fileThread(' + idx + ')">Confirm File' + n + '</button>'
       : '<button class="tl-btn tl-file"' + fileOff + ' onclick="fileThread(' + idx + ')">File' + n + '</button>' +
-        '<button class="tl-btn tl-reply-file"' + fileOff + replyOff + ' onclick="replyAndFile(' + idx + ')">Reply & File</button>';
+        '<button class="tl-btn tl-reply-file"' + fileOff + replyOff + ' onclick="replyAndFile(' + idx + ')">Reply & File</button>' +
+        lizBtn;
   } else {
     fileSection = group.armed
       ? armedLabel + '<button class="tl-btn tl-delete"' + delOff + ' onclick="deleteThread(' + idx + ')">Confirm Delete' + n + '</button>'
@@ -1072,6 +1079,56 @@ async function flagThread(idx) {
 
 function skipThread(idx) {
   markThreadDone(idx);
+}
+
+async function lizItThread(idx) {
+  const group = _threadGroups[idx];
+  if (!group || group.isInternal) return;
+  const folder = group.manualMatch || group.match;
+  if (!folder) return;
+  const lizEmail = localStorage.getItem("hmf_lizit_email") || "";
+  if (!lizEmail) { setThreadWorking(idx, "No forward email configured in settings"); return; }
+  const latest = group.emails.slice().sort((a, b) =>
+    new Date(b.msg.sentDateTime || b.msg.receivedDateTime || 0) -
+    new Date(a.msg.sentDateTime || a.msg.receivedDateTime || 0)
+  )[0];
+  if (!latest) return;
+  setThreadWorking(idx, "Forwarding…");
+  try {
+    const token = await ensureFreshToken();
+    const fwdRes = await fetch(`${GRAPH_BASE}/me/messages/${latest.msg.id}/createForward`, {
+      method: "POST",
+      headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+      body: JSON.stringify({})
+    });
+    if (!fwdRes.ok) throw new Error("Forward failed");
+    const draft = await fwdRes.json();
+    const patchRes = await fetch(`${GRAPH_BASE}/me/messages/${draft.id}`, {
+      method: "PATCH",
+      headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+      body: JSON.stringify({ toRecipients: [{ emailAddress: { address: lizEmail } }] })
+    });
+    if (!patchRes.ok) throw new Error("Recipient update failed");
+    const sendRes = await fetch(`${GRAPH_BASE}/me/messages/${draft.id}/send`, {
+      method: "POST",
+      headers: { Authorization: "Bearer " + token }
+    });
+    if (!sendRes.ok) throw new Error("Send failed");
+    setThreadWorking(idx, "Filing…");
+    const checked = group.emails.filter(e => e.checked);
+    const cid = group.conversationId;
+    const sentIdsPromise = _mode !== "sent"
+      ? fetchSentConversationIds(token, cid).catch(() => [])
+      : Promise.resolve([]);
+    for (const e of checked) await moveMessage(token, e.msg.id, folder.id);
+    const sentIds = await sentIdsPromise;
+    if (sentIds.length) {
+      await Promise.all(sentIds.map(id => moveMessage(token, id, folder.id).catch(() => {})));
+    }
+    markThreadDone(idx);
+  } catch(err) {
+    setThreadWorking(idx, "Error — try again");
+  }
 }
 
 async function replyAndFile(idx) {

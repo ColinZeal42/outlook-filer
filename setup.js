@@ -113,6 +113,19 @@ function renderBaselineSection() {
 
 function renderBehaviorSection() {
   populateSortPicker();
+  populateLizItEmail();
+}
+
+function populateLizItEmail() {
+  const val = Office.context.roamingSettings.get("lizit_email") || "";
+  const input = document.getElementById("lizItEmail");
+  if (input) input.value = val;
+}
+
+function onLizItEmailChange() {
+  const val = (document.getElementById("lizItEmail").value || "").trim();
+  Office.context.roamingSettings.set("lizit_email", val);
+  Office.context.roamingSettings.saveAsync(() => {});
 }
 
 // --- Folder picker ---
@@ -359,6 +372,7 @@ function openDialog(mode) {
   localStorage.setItem("hmf_sort_order", Office.context.roamingSettings.get("sort_order") || "date-desc");
   localStorage.setItem("hmf_pinned_folders", Office.context.roamingSettings.get("pinned_folders") || "[]");
   localStorage.setItem("hmf_learned_contacts", Office.context.roamingSettings.get("learned_contacts") || "{}");
+  localStorage.setItem("hmf_lizit_email", Office.context.roamingSettings.get("lizit_email") || "");
   const sentLastRun = Office.context.roamingSettings.get("sent_last_run");
   if (sentLastRun) localStorage.setItem("hmf_sent_last_run", sentLastRun);
 
