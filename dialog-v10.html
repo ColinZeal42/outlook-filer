@@ -102,6 +102,12 @@
     .tl-armed-label { flex-basis: 100%; font-size: 14px; color: #0078d4; font-style: italic; margin-bottom: 2px; }
     .tl-learned { color: #107c10; }
     .tl-ambiguous { color: #ca5010; font-style: italic; }
+    .lc-progress-track { height: 4px; background: #e0e0e0; margin-bottom: 10px; border-radius: 2px; }
+    .lc-progress-fill { height: 4px; background: #0078d4; border-radius: 2px; transition: width 0.3s; }
+    .lc-card { border: 1px solid #e0e0e0; border-radius: 4px; overflow: hidden; }
+    .lc-header { display: flex; align-items: center; gap: 8px; padding: 9px 12px; background: #f9f9f9; font-size: 16px; }
+    .lc-emails { padding: 10px 12px; border-top: 1px solid #e0e0e0; max-height: 55vh; overflow-y: auto; }
+    .lc-done { font-size: 20px; color: #107c10; font-weight: 600; text-align: center; padding: 40px 0; }
   </style>
 </head>
 <body>
@@ -109,6 +115,9 @@
   <div id="crash-banner" style="display:none;background:#ffd7d7;border:1px solid #c00;border-radius:3px;padding:6px 10px;font-size:12px;margin-bottom:8px"></div>
   <div id="status">Loading…</div>
   <div id="queue-status"></div>
+  <div id="mode-bar" style="margin-bottom:8px">
+    <button id="mode-toggle" onclick="toggleLinearMode()" style="display:none;padding:3px 12px;font-size:13px;border:1px solid #0078d4;border-radius:3px;background:#fff;color:#0078d4;cursor:pointer;font-family:'Segoe UI',sans-serif">Switch to Linear</button>
+  </div>
   <div id="dialog-ver"></div>
   <div id="thread-list"></div>
 </body>

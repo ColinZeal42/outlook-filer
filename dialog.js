@@ -9,6 +9,8 @@ let _pinnedFolders = [];
 let _learnedContacts = {};
 let _mode = "inbox";
 let _sortOrder = "date-desc";
+let _linearMode = false;
+let _linearIdx = 0;
 
 Office.onReady(() => {
   const verEl = document.getElementById("dialog-ver");
@@ -359,6 +361,8 @@ function initThreadList(groups, folders, mode) {
   document.getElementById("thread-list").style.display = "block";
   renderThreadList();
   preloadVerbs(groups).catch(() => {});
+  const modeBtn = document.getElementById("mode-toggle");
+  if (modeBtn) modeBtn.style.display = "inline-block";
 }
 
 async function fetchEmailVerb(token, msgId) {
@@ -405,6 +409,118 @@ async function preloadVerbs(groups) {
         }
       } catch(_) {}
     }));
+  }
+}
+
+function toggleLinearMode() {
+  _linearMode = !_linearMode;
+  const btn = document.getElementById("mode-toggle");
+  if (btn) btn.textContent = _linearMode ? "Switch to List" : "Switch to Linear";
+  if (_linearMode) {
+    _linearIdx = _threadGroups.findIndex(g => !g.done);
+    if (_linearIdx === -1) {
+      document.getElementById("thread-list").innerHTML = '<div class="lc-done">All done ✓</div>';
+    } else {
+      renderLinearCard(_linearIdx);
+    }
+  } else {
+    renderThreadList();
+  }
+}
+
+function advanceLinear() {
+  const nextIdx = _threadGroups.findIndex((g, i) => i > _linearIdx && !g.done);
+  if (nextIdx !== -1) {
+    _linearIdx = nextIdx;
+    renderLinearCard(_linearIdx);
+  } else {
+    _linearIdx = -1;
+    document.getElementById("thread-list").innerHTML = '<div class="lc-done">All done ✓</div>';
+    document.getElementById("queue-status").textContent = "All done ✓";
+  }
+}
+
+function renderLinearCard(idx) {
+  _linearIdx = idx;
+  const el = document.getElementById("thread-list");
+  if (!el) return;
+  const group = _threadGroups[idx];
+  if (!group) { advanceLinear(); return; }
+
+  const doneCount = _threadGroups.filter(g => g.done).length;
+  const totalCount = _threadGroups.length;
+  const progressPct = totalCount > 0 ? Math.round(doneCount / totalCount * 100) : 0;
+
+  const queueEl = document.getElementById("queue-status");
+  if (queueEl) queueEl.textContent = (doneCount + 1) + " of " + totalCount + " threads";
+
+  const subject = esc(group.subject || "(no subject)");
+  const effectiveFolder = group.manualMatch || group.match;
+  const matchHtml = group.isInternal
+    ? '<span class="tl-match tl-internal">Internal</span>'
+    : effectiveFolder && group.learnedMatch && !group.manualMatch
+      ? '<span class="tl-match tl-learned">→ ' + esc(effectiveFolder.displayName) + ' ✓</span>'
+      : effectiveFolder
+        ? '<span class="tl-match">→ ' + esc(effectiveFolder.displayName) + '</span>'
+        : group.ambiguous
+          ? '<span class="tl-match tl-ambiguous">(pick folder)</span>'
+          : '<span class="tl-match tl-no-match">(no match)</span>';
+
+  const le = group.latestEmail;
+  const hdrClass = le?.isReplied ? " tl-replied" : le?.isForwarded ? " tl-forwarded" : "";
+  const replyIcon = le?.isReplied ? '<span class="tl-reply-icon">↩</span>'
+    : le?.isForwarded ? '<span class="tl-reply-icon">↪</span>' : "";
+  const dateStr = group.latestDate
+    ? new Date(group.latestDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+    : "";
+
+  let html = '';
+
+  html += '<div class="lc-progress-track"><div class="lc-progress-fill" style="width:' + progressPct + '%"></div></div>';
+  html += '<div class="lc-card">';
+  html += '<div class="lc-header' + hdrClass + '">';
+  html += '<span class="tl-pill">' + group.emails.length + '</span>';
+  html += '<span class="tl-subject">' + subject + '</span>';
+  if (dateStr) html += '<span class="tl-date">(' + dateStr + ')</span>';
+  html += matchHtml;
+  html += replyIcon;
+  html += '</div>';
+
+  html += '<div class="lc-emails">';
+  group.emails.forEach(e => {
+    const ea = (e.msg.from && e.msg.from.emailAddress) || {};
+    const sender = esc(ea.name || ea.address || "Unknown");
+    const eDateStr = esc(formatDate(e.msg.sentDateTime || e.msg.receivedDateTime));
+    const badge = e.isForwarded ? '<span class="tl-badge tl-fwd">↪ Fwd</span> '
+                : e.isReplied   ? '<span class="tl-badge">↩ Replied</span> ' : '';
+    const bodyHtml = e.body === null
+      ? '<em>Loading…</em>'
+      : esc(e.body || "(no preview)").replace(/\n/g, "<br>");
+    const checked = e.checked ? " checked" : "";
+    html += '<div class="tl-email">';
+    html += '<label class="tl-email-label">';
+    html += '<input type="checkbox" id="chk-' + esc(e.msg.id) + '"' + checked + ' onchange="onCheckChange(' + idx + ')">';
+    html += '<div class="tl-email-content">';
+    html += '<div class="tl-email-meta">' + badge + sender + ' <span class="tl-email-date">· ' + eDateStr + '</span></div>';
+    html += '<div class="tl-email-body" onclick="event.preventDefault();openEmail(\'' + esc(e.msg.id) + '\')">' + bodyHtml + '</div>';
+    html += '</div></label></div>';
+  });
+  html += '</div>';
+
+  if (!group.isInternal) {
+    const selectedId = (group.manualMatch || group.match || {}).id || "";
+    html += '<select class="tl-folder-select" onchange="onFolderPick(' + idx + ', this.value)">';
+    html += buildFolderOptions(selectedId);
+    html += '</select>';
+  }
+
+  html += '<div class="tl-actions" id="tl-actions-' + idx + '">' + buildActionButtons(idx) + '</div>';
+  html += '</div>';
+
+  el.innerHTML = html;
+
+  if (group.emails.some(e => e.body === null)) {
+    loadThreadBodies(group).catch(() => {});
   }
 }
 
@@ -697,7 +813,11 @@ async function loadThreadBodies(group) {
     const entries = Object.values(counts);
     if (entries.length) group.match = entries.reduce((a, b) => b.n > a.n ? b : a).folder;
   }
-  if (group.expanded && !group.done) renderThreadList();
+  if (_linearMode && !group.done) {
+    renderLinearCard(_linearIdx);
+  } else if (group.expanded && !group.done) {
+    renderThreadList();
+  }
 }
 
 function onCheckChange(idx) {
@@ -715,7 +835,7 @@ function onFolderPick(idx, folderId) {
   const group = _threadGroups[idx];
   if (!group) return;
   group.manualMatch = folderId ? ([..._pinnedFolders, ..._threadFolders].find(f => f.id === folderId) || null) : null;
-  renderThreadList();
+  if (_linearMode) { renderLinearCard(idx); } else { renderThreadList(); }
 }
 
 function setThreadWorking(idx, msg) {
@@ -731,6 +851,11 @@ function markThreadDone(idx) {
   const wasExpanded = group.expanded;
   group.done = true;
   group.expanded = false;
+
+  if (_linearMode) {
+    advanceLinear();
+    return;
+  }
 
   const nextIdx = _threadGroups.findIndex((g, i) => i > idx && !g.done);
   if (nextIdx !== -1 && wasExpanded) _threadGroups[nextIdx].expanded = true;
@@ -863,7 +988,7 @@ async function replyAndFile(idx) {
     // Ask task pane to open the draft (requires Office.js mailbox context)
     Office.context.ui.messageParent(JSON.stringify({ action: "open-item", restId: draft.id }));
     group.armed = true;
-    renderThreadList();
+    if (_linearMode) { renderLinearCard(idx); } else { renderThreadList(); }
   } catch(err) {
     setThreadWorking(idx, "Could not open reply — try again");
   }
