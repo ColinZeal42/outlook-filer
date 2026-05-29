@@ -1109,23 +1109,24 @@ async function lizItThread(idx) {
       headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
       body: JSON.stringify({})
     });
-    if (!fwdRes.ok) throw new Error("Forward failed");
+    if (!fwdRes.ok) { const t = await fwdRes.text().catch(()=>""); throw new Error("Forward failed " + fwdRes.status + " " + t.slice(0,120)); }
     const draft = await fwdRes.json();
     const patchRes = await fetch(`${GRAPH_BASE}/me/messages/${draft.id}`, {
       method: "PATCH",
       headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
       body: JSON.stringify({ toRecipients: [{ emailAddress: { address: lizEmail } }] })
     });
-    if (!patchRes.ok) throw new Error("Recipient update failed");
+    if (!patchRes.ok) { const t = await patchRes.text().catch(()=>""); throw new Error("Patch failed " + patchRes.status + " " + t.slice(0,120)); }
     const sendRes = await fetch(`${GRAPH_BASE}/me/messages/${draft.id}/send`, {
       method: "POST",
       headers: { Authorization: "Bearer " + token }
     });
     if (!sendRes.ok) {
+      const sendErr = await sendRes.text().catch(()=>"");
       await fetch(`${GRAPH_BASE}/me/messages/${draft.id}`, {
         method: "DELETE", headers: { Authorization: "Bearer " + token }
       }).catch(() => {});
-      throw new Error("Send failed");
+      throw new Error("Send failed " + sendRes.status + " " + sendErr.slice(0,200));
     }
     setThreadWorking(idx, "Filing…");
     const checked = group.emails.filter(e => e.checked);
@@ -1140,7 +1141,7 @@ async function lizItThread(idx) {
     }
     markThreadDone(idx);
   } catch(err) {
-    setThreadWorking(idx, "Error — try again");
+    setThreadWorking(idx, "Error: " + (err.message || err));
   }
 }
 
