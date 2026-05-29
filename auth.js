@@ -3,7 +3,7 @@
 const AUTH_CLIENT_ID = "75dc31c8-0515-4c64-849c-3958218e2c5f";
 const AUTH_AUTHORITY = "https://login.microsoftonline.com/hmflaw.com";
 const AUTH_REDIRECT_URI = "https://ColinZeal42.github.io/outlook-filer/auth.html";
-const AUTH_SCOPES = ["https://graph.microsoft.com/Mail.ReadWrite", "offline_access"];
+const AUTH_SCOPES = ["https://graph.microsoft.com/Mail.ReadWrite", "https://graph.microsoft.com/Mail.Send", "offline_access"];
 
 const msalInstance = new msal.PublicClientApplication({
   auth: { clientId: AUTH_CLIENT_ID, authority: AUTH_AUTHORITY, redirectUri: AUTH_REDIRECT_URI },

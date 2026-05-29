@@ -58,7 +58,7 @@ async function refreshAccessToken() {
         client_id: "75dc31c8-0515-4c64-849c-3958218e2c5f",
         grant_type: "refresh_token",
         refresh_token: storedRefresh,
-        scope: "https://graph.microsoft.com/Mail.ReadWrite offline_access"
+        scope: "https://graph.microsoft.com/Mail.ReadWrite https://graph.microsoft.com/Mail.Send offline_access"
       }).toString()
     });
     if (!res.ok) return false;
