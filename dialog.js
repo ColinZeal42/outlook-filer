@@ -13,6 +13,7 @@ let _linearMode = false;
 let _linearIdx = 0;
 let _linearFilter = null;
 let _loadGen = 0;
+let _verbGen = 0;
 
 Office.onReady(() => {
   const verEl = document.getElementById("dialog-ver");
@@ -127,7 +128,9 @@ async function fetchEmailDetails(token, msgId) {
 function extractBodyText(bodyObj) {
   if (!bodyObj || !bodyObj.content) return null;
   if (bodyObj.contentType === "html") {
-    return bodyObj.content
+    const MAX = 40 * 1024;
+    const html = bodyObj.content.length > MAX ? bodyObj.content.slice(0, MAX) : bodyObj.content;
+    return html
       .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
       .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
       .replace(/<br\s*\/?>/gi, "\n")
@@ -136,7 +139,8 @@ function extractBodyText(bodyObj) {
       .replace(/&nbsp;/g, " ").replace(/&amp;/g, "&")
       .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"');
   }
-  return bodyObj.content;
+  const MAX_TEXT = 40 * 1024;
+  return bodyObj.content.length > MAX_TEXT ? bodyObj.content.slice(0, MAX_TEXT) : bodyObj.content;
 }
 
 // --- Helpers ---
@@ -384,9 +388,11 @@ async function fetchEmailVerb(token, msgId) {
 }
 
 async function preloadVerbs(groups) {
+  const gen = ++_verbGen;
   const token = await ensureFreshToken().catch(() => null);
-  if (!token) return;
+  if (!token || gen !== _verbGen) return;
   for (let i = 0; i < groups.length; i += 5) {
+    if (gen !== _verbGen) return;
     await Promise.all(groups.slice(i, i + 5).map(async (group, j) => {
       const idx = i + j;
       try {
@@ -495,6 +501,7 @@ function setLinearFilter(key) {
 
 function toggleLinearMode() {
   _linearMode = !_linearMode;
+  if (_linearMode) ++_verbGen; // cancel any running preloadVerbs
   const btn = document.getElementById("mode-toggle");
   if (btn) btn.textContent = _linearMode ? "Switch to List" : "Switch to Linear";
   if (_linearMode) {
@@ -909,29 +916,27 @@ async function loadThreadBodies(group) {
   const gen = ++_loadGen;
   const token = await ensureFreshToken().catch(() => null);
   if (!token || gen !== _loadGen) return;
-  const rawBodies = {};
+  const counts = {};
   for (const e of group.emails) {
     if (gen !== _loadGen) return;
     if (e.body !== null) continue;
     const details = await fetchEmailDetails(token, e.msg.id)
       .catch(() => ({ body: null, isReplied: false, isForwarded: false }));
     if (gen !== _loadGen) return;
-    rawBodies[e.msg.id] = details.body || "";
     e.body = extractPreviewLines(details.body, 5) || "(no preview)";
     e.isReplied = details.isReplied;
     e.isForwarded = details.isForwarded;
-  }
-  if (gen !== _loadGen) return;
-  if (!group.match) {
-    const counts = {};
-    for (const e of group.emails) {
+    if (!group.match && details.body) {
       const allRecip = [...(e.msg.toRecipients||[]), ...(e.msg.ccRecipients||[])];
       const fromAddr = e.msg.from?.emailAddress?.address || "";
       const fromName = e.msg.from?.emailAddress?.name || "";
       const pt = [fromName, fromAddr, ...allRecip.map(r => (r.emailAddress?.name||"") + " " + (r.emailAddress?.address||""))].join(" ");
-      const m = matchFolder({ subject: e.msg.subject || "", participantText: pt, bodyText: rawBodies[e.msg.id] || "" }, _threadFolders);
+      const m = matchFolder({ subject: e.msg.subject || "", participantText: pt, bodyText: details.body }, _threadFolders);
       if (m) { if (!counts[m.id]) counts[m.id] = { folder: m, n: 0 }; counts[m.id].n++; }
     }
+  }
+  if (gen !== _loadGen) return;
+  if (!group.match) {
     const entries = Object.values(counts);
     if (entries.length) group.match = entries.reduce((a, b) => b.n > a.n ? b : a).folder;
   }
