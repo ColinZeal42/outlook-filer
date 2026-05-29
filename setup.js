@@ -61,16 +61,30 @@ async function ensureFreshToken() {
 
 // --- Status ---
 
+function disconnectAccount() {
+  Office.context.roamingSettings.remove("refresh_token");
+  Office.context.roamingSettings.remove("token_expiry");
+  Office.context.roamingSettings.remove("access_token");
+  Office.context.roamingSettings.saveAsync(() => {
+    document.getElementById("account-status").textContent = "Disconnected";
+    document.getElementById("account-status").style.color = "#555";
+    document.getElementById("connectBtn").style.display = "inline-block";
+    document.getElementById("disconnectBtn").style.display = "none";
+  });
+}
+
 async function checkStatus() {
   const refreshToken = Office.context.roamingSettings.get("refresh_token");
   const expiry = parseInt(Office.context.roamingSettings.get("token_expiry") || "0");
   const accountEl = document.getElementById("account-status");
   const connectBtn = document.getElementById("connectBtn");
+  const disconnectBtn = document.getElementById("disconnectBtn");
 
   if (refreshToken && Date.now() < expiry) {
     accountEl.textContent = "Connected";
     accountEl.style.color = "green";
     connectBtn.style.display = "none";
+    disconnectBtn.style.display = "inline-block";
     renderFolderSection();
     renderPinnedSection();
     renderLearnedSection();
@@ -80,6 +94,7 @@ async function checkStatus() {
     accountEl.textContent = "Refreshing session…";
     accountEl.style.color = "#555";
     connectBtn.style.display = "none";
+    disconnectBtn.style.display = "none";
     const ok = await refreshAccessToken();
     if (ok) {
       checkStatus();
@@ -87,11 +102,13 @@ async function checkStatus() {
       accountEl.textContent = "Session expired — reconnect to continue";
       accountEl.style.color = "darkorange";
       connectBtn.style.display = "inline-block";
+      disconnectBtn.style.display = "none";
     }
   } else {
     accountEl.textContent = "Not connected";
     accountEl.style.color = "#555";
     connectBtn.style.display = "inline-block";
+    disconnectBtn.style.display = "none";
     renderBaselineSection();
     renderBehaviorSection();
   }
