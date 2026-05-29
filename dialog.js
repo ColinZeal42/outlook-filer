@@ -12,6 +12,7 @@ let _sortOrder = "date-desc";
 let _linearMode = false;
 let _linearIdx = 0;
 let _linearFilter = null;
+let _loadGen = 0;
 
 Office.onReady(() => {
   const verEl = document.getElementById("dialog-ver");
@@ -905,18 +906,22 @@ function toggleThread(idx) {
 }
 
 async function loadThreadBodies(group) {
+  const gen = ++_loadGen;
   const token = await ensureFreshToken().catch(() => null);
-  if (!token) return;
+  if (!token || gen !== _loadGen) return;
   const rawBodies = {};
   for (const e of group.emails) {
+    if (gen !== _loadGen) return;
     if (e.body !== null) continue;
     const details = await fetchEmailDetails(token, e.msg.id)
       .catch(() => ({ body: null, isReplied: false, isForwarded: false }));
+    if (gen !== _loadGen) return;
     rawBodies[e.msg.id] = details.body || "";
     e.body = extractPreviewLines(details.body, 5) || "(no preview)";
     e.isReplied = details.isReplied;
     e.isForwarded = details.isForwarded;
   }
+  if (gen !== _loadGen) return;
   if (!group.match) {
     const counts = {};
     for (const e of group.emails) {
